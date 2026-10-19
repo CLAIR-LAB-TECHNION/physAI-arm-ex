@@ -1,0 +1,258 @@
+<?xml version="1.0"?>
+<!--
+  OnRobot RG6 two-finger gripper.
+
+  Geometry and visual meshes come from the Harada lab model
+  (github.com/Osaka-University-Harada-Laboratory/onrobot, MIT licence), which
+  matches the 262 x 212 x 42 mm envelope and the 0-160 mm stroke of the RG6
+  data sheet.
+
+  The real RG6 moves each fingertip on a parallelogram linkage: the pads stay
+  parallel and dip deeper as the gripper closes. That closed loop cannot be
+  written in URDF and this Gazebo version has no mimic joints, so the
+  simulated fingertips ride on two prismatic joints each:
+    *_finger_slide  across (closing direction), force limited by grip_force
+    *_finger_lift   along the gripper axis, held stiff and driven by
+                    rg6_driver.py to the depth the real linkage has at the
+                    current opening.
+  The pads therefore follow exactly the fingertip path of the real gripper and
+  stay perfectly parallel. The knuckles are not part of the force path; they
+  are driven from the measured opening, and their bars have collision boxes
+  (the inner knuckles reach into the gap between the pads about 6 cm above
+  the fingertips, see lab_replica/robot/rg6.py), so a held object cannot pass
+  through them.
+
+  Frame rg6_base_link: z points from the mounting face towards the fingertips,
+  the fingers close along y.
+-->
+<robot xmlns:xacro="http://wiki.ros.org/xacro">
+
+  <xacro:macro name="rg6_box_inertia" params="m x y z">
+    <inertia ixx="${m*(y*y+z*z)/12}" ixy="0" ixz="0" iyy="${m*(x*x+z*z)/12}" iyz="0" izz="${m*(x*x+y*y)/12}"/>
+  </xacro:macro>
+
+  <xacro:macro name="rg6" params="prefix parent *origin grip_force:=40.0 sim_ignition:=false">
+    <xacro:property name="mesh_dir" value="file://$(find lab_replica)/description/meshes/rg6/visual"/>
+    <xacro:property name="q_lim" value="0.628319"/>
+    <!-- knuckle vector from its pivot to the fingertip joint -->
+    <xacro:property name="ka" value="0.047335"/>
+    <xacro:property name="kb" value="0.064495"/>
+    <!-- fingertip joint position at q = 0 (slide = lift = 0 there) -->
+    <xacro:property name="fy" value="0.071447"/>
+    <xacro:property name="fz" value="0.201308"/>
+
+    <joint name="${prefix}rg6_mount_joint" type="fixed">
+      <parent link="${parent}"/>
+      <child link="${prefix}rg6_base_link"/>
+      <xacro:insert_block name="origin"/>
+    </joint>
+
+    <link name="${prefix}rg6_base_link">
+      <inertial>
+        <origin xyz="0 0 0.08" rpy="0 0 0"/>
+        <mass value="1.0"/>
+        <xacro:rg6_box_inertia m="1.0" x="0.045" y="0.084" z="0.167"/>
+      </inertial>
+      <visual>
+        <geometry><mesh filename="${mesh_dir}/base_link.stl"/></geometry>
+        <material name="rg6_grey"><color rgba="0.78 0.79 0.80 1"/></material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0.0125" rpy="0 0 0"/>
+        <geometry><cylinder radius="0.036" length="0.025"/></geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 0 0.096" rpy="0 0 0"/>
+        <geometry><box size="0.044 0.084 0.142"/></geometry>
+      </collision>
+    </link>
+
+    <xacro:macro name="rg6_side" params="side flip">
+      <!-- flip = 0 for the left finger (on -y), 1 for the right finger. -->
+      <link name="${prefix}${side}_finger_slider">
+        <inertial>
+          <mass value="0.02"/>
+          <inertia ixx="2e-6" ixy="0" ixz="0" iyy="2e-6" iyz="0" izz="2e-6"/>
+        </inertial>
+      </link>
+      <link name="${prefix}${side}_inner_finger">
+        <inertial>
+          <origin xyz="0 0.009 0.03" rpy="0 0 0"/>
+          <mass value="0.06"/>
+          <xacro:rg6_box_inertia m="0.06" x="0.025" y="0.03" z="0.072"/>
+        </inertial>
+        <visual>
+          <geometry><mesh filename="${mesh_dir}/inner_finger.stl"/></geometry>
+          <material name="rg6_black"><color rgba="0.08 0.08 0.08 1"/></material>
+        </visual>
+        <!-- Rubber pad: contact face at y = 0.0246 over the lower 5 cm, split
+             in two columns of three so an object touches it in six separate
+             points (DART makes one contact per pair; points on one line
+             would let the object swing about the closing axis). -->
+        <collision name="${prefix}${side}_pad_top_a">
+          <origin xyz="-0.0065 0.0196 0.0244" rpy="0 0 0"/>
+          <geometry><box size="0.012 0.010 0.0160"/></geometry>
+        </collision>
+        <collision name="${prefix}${side}_pad_top_b">
+          <origin xyz="0.0065 0.0196 0.0244" rpy="0 0 0"/>
+          <geometry><box size="0.012 0.010 0.0160"/></geometry>
+        </collision>
+        <collision name="${prefix}${side}_pad_mid_a">
+          <origin xyz="-0.0065 0.0196 0.0412" rpy="0 0 0"/>
+          <geometry><box size="0.012 0.010 0.0160"/></geometry>
+        </collision>
+        <collision name="${prefix}${side}_pad_mid_b">
+          <origin xyz="0.0065 0.0196 0.0412" rpy="0 0 0"/>
+          <geometry><box size="0.012 0.010 0.0160"/></geometry>
+        </collision>
+        <collision name="${prefix}${side}_pad_tip_a">
+          <origin xyz="-0.0065 0.0196 0.058" rpy="0 0 0"/>
+          <geometry><box size="0.012 0.010 0.0160"/></geometry>
+        </collision>
+        <collision name="${prefix}${side}_pad_tip_b">
+          <origin xyz="0.0065 0.0196 0.058" rpy="0 0 0"/>
+          <geometry><box size="0.012 0.010 0.0160"/></geometry>
+        </collision>
+        <collision>
+          <origin xyz="0 0.0045 0.030" rpy="0 0 0"/>
+          <geometry><box size="0.025 0.019 0.072"/></geometry>
+        </collision>
+      </link>
+      <joint name="${prefix}${side}_finger_slide" type="prismatic">
+        <origin xyz="0 ${(2 * flip - 1) * fy} ${fz}" rpy="0 0 ${flip * pi}"/>
+        <parent link="${prefix}rg6_base_link"/>
+        <child link="${prefix}${side}_finger_slider"/>
+        <axis xyz="0 1 0"/>
+        <limit lower="-0.0290" upper="0.0470" velocity="0.2" effort="${grip_force}"/>
+        <dynamics damping="2.0" friction="0.0"/>
+      </joint>
+      <joint name="${prefix}${side}_finger_lift" type="prismatic">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <parent link="${prefix}${side}_finger_slider"/>
+        <child link="${prefix}${side}_inner_finger"/>
+        <axis xyz="0 0 1"/>
+        <limit lower="-0.0410" upper="0.0160" velocity="0.5" effort="300"/>
+        <dynamics damping="5.0"/>
+      </joint>
+
+      <!-- Linkage, driven from the measured opening. Each bar has one
+           collision box along it (the inner one three: bar, neck and the eye
+           at the fingertip joint), from the pivot (the round pivot end of the
+           outer knuckle stays inside the body housing) to the fingertip
+           joint. The boxes are mirrored in lab_replica/robot/rg6.py
+           (KNUCKLE_BOXES); keep the two in step. -->
+      <link name="${prefix}${side}_outer_knuckle">
+        <inertial>
+          <origin xyz="0 -0.0237 0.0322"/>
+          <mass value="0.01"/>
+          <inertia ixx="1e-6" ixy="0" ixz="0" iyy="1e-6" iyz="0" izz="1e-6"/>
+        </inertial>
+        <visual>
+          <geometry><mesh filename="${mesh_dir}/outer_knuckle.stl"/></geometry>
+          <material name="rg6_grey"/>
+        </visual>
+        <collision name="${prefix}${side}_outer_knuckle_bar">
+          <origin xyz="0 -0.02911 0.03941" rpy="0.6331 0 0"/>
+          <geometry><box size="0.020 0.0127 0.0740"/></geometry>
+        </collision>
+      </link>
+      <link name="${prefix}${side}_inner_knuckle">
+        <inertial>
+          <origin xyz="0 -0.022 0.033"/>
+          <mass value="0.01"/>
+          <inertia ixx="1e-6" ixy="0" ixz="0" iyy="1e-6" iyz="0" izz="1e-6"/>
+        </inertial>
+        <visual>
+          <geometry><mesh filename="${mesh_dir}/inner_knuckle.stl"/></geometry>
+          <material name="rg6_grey"/>
+        </visual>
+        <collision name="${prefix}${side}_inner_knuckle_bar">
+          <origin xyz="0 -0.01526 0.02663" rpy="0.6331 0 0"/>
+          <geometry><box size="0.022 0.0103 0.0530"/></geometry>
+        </collision>
+        <collision name="${prefix}${side}_inner_knuckle_neck">
+          <origin xyz="0 -0.03642 0.05266" rpy="0.6331 0 0"/>
+          <geometry><box size="0.016 0.0070 0.0140"/></geometry>
+        </collision>
+        <collision name="${prefix}${side}_inner_knuckle_eye">
+          <origin xyz="0 -0.04496 0.06438" rpy="0.6331 0 0"/>
+          <geometry><box size="0.025 0.0119 0.0150"/></geometry>
+        </collision>
+      </link>
+
+      <gazebo reference="${prefix}${side}_inner_finger">
+        <mu1>1.3</mu1>
+        <mu2>1.3</mu2>
+      </gazebo>
+    </xacro:macro>
+
+    <xacro:rg6_side side="left" flip="0"/>
+    <xacro:rg6_side side="right" flip="1"/>
+
+    <!-- Knuckle joints, position controlled by rg6_driver.py, stiff enough
+         that a held object pressing on a bar does not move it. Names follow
+         the Harada model:
+         finger_joint = q, left_inner_knuckle = -q, right_outer_knuckle = -q,
+         right_inner_knuckle = -q, with q = -0.628 open and +0.628 closed. -->
+    <joint name="${prefix}finger_joint" type="revolute">
+      <origin xyz="0 -0.024112 0.136813" rpy="0 0 0"/>
+      <parent link="${prefix}rg6_base_link"/>
+      <child link="${prefix}left_outer_knuckle"/>
+      <axis xyz="-1 0 0"/>
+      <limit lower="${-q_lim}" upper="${q_lim}" velocity="3.0" effort="20.0"/>
+      <dynamics damping="0.002"/>
+    </joint>
+    <joint name="${prefix}left_inner_knuckle_joint" type="revolute">
+      <origin xyz="0 -0.012720 0.159500" rpy="0 0 0"/>
+      <parent link="${prefix}rg6_base_link"/>
+      <child link="${prefix}left_inner_knuckle"/>
+      <axis xyz="1 0 0"/>
+      <limit lower="${-q_lim}" upper="${q_lim}" velocity="3.0" effort="20.0"/>
+      <dynamics damping="0.002"/>
+    </joint>
+    <joint name="${prefix}right_outer_knuckle_joint" type="revolute">
+      <origin xyz="0 0.024112 0.136813" rpy="0 0 ${pi}"/>
+      <parent link="${prefix}rg6_base_link"/>
+      <child link="${prefix}right_outer_knuckle"/>
+      <axis xyz="1 0 0"/>
+      <limit lower="${-q_lim}" upper="${q_lim}" velocity="3.0" effort="20.0"/>
+      <dynamics damping="0.002"/>
+    </joint>
+    <joint name="${prefix}right_inner_knuckle_joint" type="revolute">
+      <origin xyz="0 0.012720 0.159500" rpy="0 0 ${-pi}"/>
+      <parent link="${prefix}rg6_base_link"/>
+      <child link="${prefix}right_inner_knuckle"/>
+      <axis xyz="1 0 0"/>
+      <limit lower="${-q_lim}" upper="${q_lim}" velocity="3.0" effort="20.0"/>
+      <dynamics damping="0.002"/>
+    </joint>
+
+    <xacro:if value="${sim_ignition}">
+      <!-- Initial opening q0 = -0.3 rad (127.6 mm). -->
+      <xacro:property name="q0" value="-0.3"/>
+      <xacro:property name="s0" value="${-0.024112 + (-ka) * cos(q0) + kb * sin(q0) + fy}"/>
+      <xacro:property name="l0" value="${0.136813 + ka * sin(q0) + kb * cos(q0) - fz}"/>
+      <ros2_control name="rg6" type="system">
+        <hardware>
+          <plugin>ign_ros2_control/IgnitionSystem</plugin>
+        </hardware>
+        <xacro:macro name="rg6_cmd_joint" params="jname init">
+          <joint name="${prefix}${jname}">
+            <command_interface name="position"/>
+            <state_interface name="position"><param name="initial_value">${init}</param></state_interface>
+            <state_interface name="velocity"/>
+            <state_interface name="effort"/>
+          </joint>
+        </xacro:macro>
+        <xacro:rg6_cmd_joint jname="left_finger_slide" init="${s0}"/>
+        <xacro:rg6_cmd_joint jname="right_finger_slide" init="${s0}"/>
+        <xacro:rg6_cmd_joint jname="left_finger_lift" init="${l0}"/>
+        <xacro:rg6_cmd_joint jname="right_finger_lift" init="${l0}"/>
+        <xacro:rg6_cmd_joint jname="finger_joint" init="${q0}"/>
+        <xacro:rg6_cmd_joint jname="left_inner_knuckle_joint" init="${-q0}"/>
+        <xacro:rg6_cmd_joint jname="right_outer_knuckle_joint" init="${-q0}"/>
+        <xacro:rg6_cmd_joint jname="right_inner_knuckle_joint" init="${-q0}"/>
+      </ros2_control>
+    </xacro:if>
+  </xacro:macro>
+</robot>

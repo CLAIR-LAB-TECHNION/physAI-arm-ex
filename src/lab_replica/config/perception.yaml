@@ -1,0 +1,71 @@
+# PERCEPTION AND AUTONOMOUS ACTIONS (lab_replica/perception, lab_replica/skills).
+# Units: metres, radians.
+
+# Topics of the wrist RealSense (realsense2_camera's names; the simulation
+# bridges its sensor to the same ones). The depth image must be aligned to
+# the colour image (driver option align_depth.enable:=true).
+topics:
+  color: /camera/camera/color/image_raw
+  depth: /camera/camera/aligned_depth_to_color/image_raw
+  info: /camera/camera/color/camera_info
+
+# Where the camera looks from before every action. Each view: the camera at
+# `eye` looking at `target`, `up` the world direction that is up in the image.
+# The top view sees the whole blue board (0.70 x 0.59 m) and a basket anywhere
+# on it (checked on the real robot, 2026-10-18). Straight down the camera only
+# reaches 0.75 m there, too low to fit the board's 0.59 m in the image's short
+# side: hence 0.78 m and a 4 deg tilt towards +x. Problem generation keeps
+# items and the basket inside these views (problems/generator.py SurveyViews).
+survey_views:
+  - {name: top, eye: [0.46, 0.0, 0.78], target: [0.5145, 0.0, 0.0], up: [0.0, -1.0, 0.0], weight: 1.0}
+
+# Views of the same region from other angles, taken before a pick-up only
+# when the survey did not recognise the item to pick (SAM 3 score x
+# plausibility below recognition_min_score). From straight above some items
+# are hard to name (the spray bottle is a grey head on a red blob); from the
+# front at an angle SAM 3 recognises them. Per item, the detection with the
+# highest score x `weight` is used; the geometry still comes from the top view.
+recognition_views:
+  - {name: front, eye: [0.40, -0.25, 0.70], target: [0.40, 0.03, 0.0], up: [0.0, 0.0, 1.0], weight: 0.7}
+recognition_min_score: 0.5
+
+# Before a pick the camera also looks at the item from closer, straight
+# down from `height` above the table, and the item's pose is taken from that
+# view (smaller errors from the depth and the hand-eye calibration).
+close_look:
+  enabled: true
+  height: 0.50
+  weight: 1.2
+
+# Spots tried (each motion-planned) when putting an item down.
+put_max_tries: 80
+
+sam3:
+  model: facebook/sam3
+  threshold: 0.1          # SAM 3 detection score kept as a candidate
+  mask_erode_px: 3        # shrink masks before reading depth (edge pixels are unreliable)
+
+# A mask is assigned to an item when SAM 3's score times the geometric
+# plausibility (height and size match the item's model) reaches this.
+min_assignment_score: 0.1
+# Points nearer the robot base axis than this belong to the robot.
+robot_radius: 0.17
+# Points higher above the table than this are not items (gripper, arm).
+max_item_height: 0.30
+
+# Text prompts per item; the first one is the main name. The basket is
+# found with its own prompt.
+basket_prompt: woven basket
+prompts:
+  red-can: [red soda can]
+  red-spray-bottle: [red spray bottle]
+  roll-of-black-tape: [roll of black tape]
+  roll-of-green-tape: [roll of green tape]
+  roll-of-blue-tape: [roll of blue tape]
+  blue-cup-with-yellow-stripe: [blue cup with yellow stripe]
+  green-mug: [green mug]
+  yellow-block: [yellow block]
+  orange-block: [orange block]
+  blue-block: [blue block]
+  red-block: [red block]
+  green-block: [green block]

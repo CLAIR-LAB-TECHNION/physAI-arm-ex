@@ -1,0 +1,4 @@
+(pick-up red-spray-bottle)
+(put-in-basket red-spray-bottle)
+(pick-up yellow-block)
+; cost = 3 (unit cost)

@@ -1,0 +1,6 @@
+(put-in-basket red-block)
+(pick-up blue-cup-with-yellow-stripe)
+(put-in-basket blue-cup-with-yellow-stripe)
+(pick-up green-mug)
+(put-in-basket green-mug)
+; cost = 5 (unit cost)

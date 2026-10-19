@@ -1,0 +1,235 @@
+name: t_newcell_3
+seed: 31
+frame: 'world: origin on the table surface below the robot base axis, x right (seen from the camera), y towards
+  the wall, z up. Robot base_link at [0.0, 0.0, 0.015] with yaw 3.141593.'
+basket:
+  center_xy:
+  - 0.5539
+  - -0.0112
+held_at_start: red-block
+objects:
+  roll-of-black-tape:
+    support: basket
+    resting_pose: flat
+    xyz:
+    - 0.56061
+    - -0.06619
+    - 0.0185
+    rpy_deg:
+    - -0.0
+    - -0.0
+    - 148.2
+    yaw_deg: 148.2
+    quat_xyzw:
+    - 0.0
+    - -0.0
+    - 0.961773
+    - 0.273848
+  red-can:
+    support: table
+    resting_pose: upright
+    xyz:
+    - 0.27194
+    - -0.02599
+    - 0.0725
+    rpy_deg:
+    - 0.0
+    - 0.0
+    - -118.3
+    yaw_deg: -118.3
+    quat_xyzw:
+    - 0.0
+    - -0.0
+    - -0.858512
+    - 0.512794
+  red-spray-bottle:
+    support: table
+    resting_pose: upright
+    xyz:
+    - 0.26256
+    - -0.10989
+    - 0.135
+    rpy_deg:
+    - 0.0
+    - 0.0
+    - 178.2
+    yaw_deg: 178.2
+    quat_xyzw:
+    - -0.0
+    - 0.0
+    - 0.999872
+    - 0.016016
+  roll-of-green-tape:
+    support: table
+    resting_pose: flat
+    xyz:
+    - 0.31813
+    - -0.22275
+    - 0.01
+    rpy_deg:
+    - -0.0
+    - 0.0
+    - 4.9
+    yaw_deg: 4.9
+    quat_xyzw:
+    - -0.0
+    - 0.0
+    - 0.042723
+    - 0.999087
+  blue-cup-with-yellow-stripe:
+    support: table
+    resting_pose: upright
+    xyz:
+    - 0.67408
+    - 0.20161
+    - 0.06
+    rpy_deg:
+    - 0.0
+    - -0.0
+    - -154.8
+    yaw_deg: -154.8
+    quat_xyzw:
+    - 0.0
+    - 0.0
+    - 0.975915
+    - -0.218153
+  red-block:
+    support: table
+    resting_pose: flat
+    xyz:
+    - 0.177
+    - -0.2196
+    - 0.025
+    rpy_deg:
+    - -0.0
+    - -0.0
+    - 75.4
+    yaw_deg: 75.4
+    quat_xyzw:
+    - 0.0
+    - -0.0
+    - 0.611381
+    - 0.791336
+  yellow-block:
+    support: table
+    resting_pose: flat
+    xyz:
+    - 0.5109
+    - 0.22549
+    - 0.025
+    rpy_deg:
+    - 0.0
+    - 0.0
+    - 61.4
+    yaw_deg: 61.4
+    quat_xyzw:
+    - 0.0
+    - 0.0
+    - 0.51089
+    - 0.859646
+  green-block:
+    support: table
+    resting_pose: flat
+    xyz:
+    - 0.12681
+    - 0.22079
+    - 0.025
+    rpy_deg:
+    - -0.0
+    - -0.0
+    - 166.0
+    yaw_deg: 166.0
+    quat_xyzw:
+    - 0.0
+    - -0.0
+    - 0.992599
+    - 0.121441
+  orange-block:
+    support: table
+    resting_pose: flat
+    xyz:
+    - 0.41315
+    - -0.23169
+    - 0.02
+    rpy_deg:
+    - 0.0
+    - -0.0
+    - 137.7
+    yaw_deg: 137.7
+    quat_xyzw:
+    - 0.0
+    - -0.0
+    - 0.932715
+    - 0.360614
+  roll-of-blue-tape:
+    support: table
+    resting_pose: flat
+    xyz:
+    - 0.39291
+    - 0.21023
+    - 0.024
+    rpy_deg:
+    - -0.0
+    - 0.0
+    - 35.1
+    yaw_deg: 35.1
+    quat_xyzw:
+    - -0.0
+    - 0.0
+    - 0.301792
+    - 0.953374
+  green-mug:
+    support: table
+    resting_pose: upright
+    xyz:
+    - 0.26636
+    - 0.15934
+    - 0.045
+    rpy_deg:
+    - -0.0
+    - 0.0
+    - 162.8
+    yaw_deg: 162.8
+    quat_xyzw:
+    - -0.0
+    - 0.0
+    - 0.988813
+    - 0.149158
+  blue-block:
+    support: table
+    resting_pose: flat
+    xyz:
+    - 0.32669
+    - 0.09803
+    - 0.025
+    rpy_deg:
+    - -0.0
+    - 0.0
+    - -36.2
+    yaw_deg: -36.2
+    quat_xyzw:
+    - -0.0
+    - 0.0
+    - -0.310642
+    - 0.950527
+init:
+- (in-basket roll-of-black-tape)
+- (on-table blue-block)
+- (on-table blue-cup-with-yellow-stripe)
+- (on-table green-block)
+- (on-table green-mug)
+- (on-table orange-block)
+- (on-table red-can)
+- (on-table red-spray-bottle)
+- (on-table roll-of-blue-tape)
+- (on-table roll-of-green-tape)
+- (on-table yellow-block)
+- (robot-gripping red-block)
+goal: (and (in-basket blue-cup-with-yellow-stripe) (in-basket green-mug))
+goal_from: the command line
+plan:
+- (put-in-basket red-block)
+- (pick-up blue-cup-with-yellow-stripe)
+- (put-in-basket blue-cup-with-yellow-stripe)
+- (pick-up green-mug)
+- (put-in-basket green-mug)

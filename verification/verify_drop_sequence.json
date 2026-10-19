@@ -1,0 +1,179 @@
+{
+ "actions": [
+  {
+   "problem": "problem_00702",
+   "action": "(pick-up roll-of-green-tape)",
+   "server_ok": true,
+   "message": "holding roll-of-green-tape (width 82 mm)",
+   "seconds": 29.0,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.1,
+   "ok": true
+  },
+  {
+   "problem": "problem_00702",
+   "action": "(put-in-basket roll-of-green-tape)",
+   "server_ok": true,
+   "message": "put roll-of-green-tape at (0.353, 0.052) on the basket",
+   "seconds": 17.1,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.0,
+   "ok": true
+  },
+  {
+   "problem": "problem_00702",
+   "action": "(pick-up red-can)",
+   "server_ok": true,
+   "message": "holding red-can (width 59 mm)",
+   "seconds": 36.4,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 2.0,
+   "ok": true
+  },
+  {
+   "problem": "problem_00702",
+   "action": "(put-in-basket red-can)",
+   "server_ok": true,
+   "message": "put red-can at (0.411, 0.030) on the basket",
+   "seconds": 18.4,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [
+    "roll-of-green-tape moved 3.8 cm, tilt 0 deg"
+   ],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 59.9,
+   "ok": true
+  },
+  {
+   "problem": "problem_00702",
+   "action": "(pick-up green-mug)",
+   "server_ok": true,
+   "message": "holding green-mug (width 65 mm)",
+   "seconds": 40.8,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.0,
+   "ok": true
+  },
+  {
+   "problem": "problem_00702",
+   "action": "(put-in-basket green-mug)",
+   "server_ok": true,
+   "message": "put green-mug at (0.352, 0.080) on the basket",
+   "seconds": 38.6,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 56.0,
+   "ok": true
+  },
+  {
+   "problem": "problem_00702",
+   "action": "(pick-up red-spray-bottle)",
+   "server_ok": true,
+   "message": "holding red-spray-bottle (width 34 mm)",
+   "seconds": 45.8,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.0,
+   "ok": true
+  },
+  {
+   "problem": "problem_00702",
+   "action": "(put-in-basket red-spray-bottle)",
+   "server_ok": true,
+   "message": "put red-spray-bottle at (0.322, 0.060) on the basket",
+   "seconds": 41.4,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 49.7,
+   "ok": true
+  },
+  {
+   "problem": "problem_00702",
+   "action": "(pick-up roll-of-blue-tape)",
+   "server_ok": true,
+   "message": "holding roll-of-blue-tape (width 86 mm)",
+   "seconds": 37.9,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.0,
+   "ok": true
+  },
+  {
+   "problem": "problem_00702",
+   "action": "(put-on-table roll-of-blue-tape)",
+   "server_ok": true,
+   "message": "put roll-of-blue-tape at (0.530, 0.220) on the table",
+   "seconds": 30.1,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.0,
+   "ok": true
+  },
+  {
+   "problem": "problem_00702",
+   "action": "(pick-up yellow-block)",
+   "server_ok": false,
+   "message": "home: arm hits unknown obstacle 2",
+   "seconds": 26.7,
+   "effect_ok": false,
+   "unchanged_ok": false,
+   "others": [
+    "red-spray-bottle moved 1.8 cm, tilt 18 deg",
+    "green-mug moved 2.1 cm, tilt 30 deg"
+   ],
+   "disturbed": [],
+   "missing": [
+    "(robot-gripping yellow-block)"
+   ],
+   "extra": [
+    "(on-table yellow-block)",
+    "(robot-gripper-empty)"
+   ],
+   "item_tilt": 0.0,
+   "ok": false
+  }
+ ]
+}

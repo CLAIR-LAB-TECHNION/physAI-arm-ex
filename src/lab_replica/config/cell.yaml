@@ -1,0 +1,146 @@
+# MEASUREMENTS OF THE CELL: table, robot mounting, gripper, basket, camera, wall.
+# (The twelve items are in items.yaml; the robot's network address is in
+# real_robot.yaml.)
+#
+# Everything else (Gazebo models, the robot description, the motion plans)
+# is computed from these numbers. After changing any of them run
+#     ros2 run lab_replica replan_problem.py all_on_table
+# which rebuilds the models and replans the solution (see README.md).
+#
+# Units: metres, radians, kg, N.
+# World frame: origin on the table surface directly below the robot base axis;
+# x to the right as seen from the front of the table (from the robot towards
+# the blue board), y away from the front towards the wall, z up. Measure every
+# position from the robot base axis.
+#
+# CURRENT SETUP (2026-10-18): slatted aluminium table, 1.26 m x 0.85 m, with
+# the robot near its back-left corner and a blue 0.70 m x 0.59 m board to its
+# right; the basket may stand anywhere on the board. Measured with the wrist
+# camera on the real robot (board, table end and back edge, basket, hand-eye
+# transform) plus the user's tape measurements (table, board, basket). The
+# rest (table height, uprights, sockets) is estimated from a photo.
+
+table:
+  surface_z: 0.0            # top of the blue board (defines z = 0)
+  height: 0.75              # floor to table top (estimated)
+  board_thickness: 0.004    # the blue board on the slats
+  # Top of the slatted aluminium table (1.26 m x 0.85 m), from the robot base axis.
+  x_min: -0.29              # left edge (x_max - 1.26)
+  x_max: 0.97               # right edge (seen by the wrist camera)
+  y_min: -0.41              # front edge (y_max - 0.85)
+  y_max: 0.44               # back edge, at the wall (seen by the wrist camera)
+  # The blue board (0.70 m x 0.59 m): the workspace. Items and the basket stand on it.
+  board_x: [0.083, 0.783]
+  board_y: [-0.29, 0.30]
+  slat_pitch: 0.05          # aluminium slats of the table top (visual)
+  frame_profile: 0.045      # aluminium extrusion of the table frame (visual)
+
+robot:
+  # The lab robot is a UR5e (read from its controller with tools/probe_cell.py).
+  ur_type: ur5e
+  # Mounting plate under the robot base, x and y size (its thickness is base_xyz[2]).
+  plate_size: [0.20, 0.18]
+  # Position of the robot's mounting face (base_link) in the world frame.
+  # base_xyz[2] is its height above the table top: MEASURE IT, the fingertips
+  # go down to 8 mm above the table.
+  base_xyz: [0.0, 0.0, 0.015]   # z from the wrist-camera calibration (board seen 3 mm below 0.012)
+  # Rotation of the robot base about the vertical axis. 0: base_link x points
+  # along world x. (UR's own "base" frame on the pendant is base_link turned
+  # by 180 deg about z.) Measured: base_link x points away from the board, so
+  # the pendant's base frame is aligned with the world frame.
+  base_yaw: 3.141593
+  # Start pose of every solution: elbow up, gripper pointing straight down,
+  # its mounting face 0.50 m above the table at (0.30, 0.17). Joint angles of
+  # the UR5e [rad]: shoulder_pan, shoulder_lift, elbow, wrist_1, wrist_2, wrist_3.
+  home_joints: [3.2603, -1.9843, 1.8579, -1.4445, -1.5708, 0.1187]
+
+gripper:
+  # OnRobot RG6 on an OnRobot Quick Changer (robot side) on the tool flange.
+  # The RG6 itself is the manufacturer's CAD geometry (description/urdf/rg6.xacro).
+  quick_changer_thickness: 0.0135
+  # Rotation of the gripper about the tool flange axis. 0: the fingers close
+  # along tool0's y axis.
+  mount_yaw: 1.570796
+  # Grip force [N] (RG6 range 25-120). Used for every grasp, real and simulated.
+  grip_force: 40.0
+
+basket:
+  # Woven seagrass basket: a frustum, open at the top. It may stand anywhere
+  # on the board: the real robot finds it in the survey view every time.
+  # center_xy is where it stands in generated problems unless they are made
+  # with --randomize-basket (seen there by the wrist camera on 2026-10-18).
+  center_xy: [0.775, 0.06]
+  top_diameter: 0.35        # at the rim (measured)
+  bottom_diameter: 0.29     # at the floor (measured)
+  height: 0.14              # measured; the wrist camera saw the rim at 0.134
+  wall_thickness: 0.008
+  bottom_thickness: 0.006
+  mass: 0.45
+  # --randomize-basket: centre drawn uniformly from this region (the board,
+  # with the rim allowed to overhang its edges), then kept only if the rim
+  # stays min_base_distance from the robot base axis (the UR's upper arm,
+  # 13 cm above the table, reaches 0.20 m out from the axis) and inside the
+  # table top.
+  random_x: [0.083, 0.783]
+  random_y: [-0.29, 0.30]
+  min_base_distance: 0.215
+
+wrist_camera:
+  # Intel RealSense RGB-D camera on a bracket on the side of the RG6 body
+  # (D435-like: colour 69 x 42 deg, depth aligned to colour).
+  #
+  # Pose of the colour OPTICAL frame (z along the view, x right in the image,
+  # y down) in rg6_base_link (z from the mounting face towards the
+  # fingertips, fingers closing along y). CALIBRATED on the real robot on
+  # 2026-10-18 with tools/calibrate_wrist_camera.py (10 views of the board,
+  # features agree to 4 mm median; halves of the views agree to 2 mm and
+  # 0.4 deg, the offset along the view axis to about 4 mm): the camera looks
+  # along the gripper axis (1.1 deg off), its lens 112 mm off the axis,
+  # level with the gripper's mounting face.
+  optical_xyz: [-0.1038, 0.0431, 0.0125]
+  optical_rpy: [0.0184, 0.0012, -1.5802]
+  housing: [0.025, 0.090, 0.025]   # camera body (depth along the view, width, height) [m]
+  # Simulated sensor, the same size as the real one (the driver runs at
+  # 640 x 360, 6 Hz). On the real robot the driver's camera_info is used.
+  width: 640
+  height: 360
+  horizontal_fov: 1.2112     # rad (69.4 deg)
+  depth_range: [0.17, 3.0]   # m
+  update_rate: 6             # Hz
+
+camera:
+  # Wide-angle RGB camera on a stand in front of the table.
+  xyz: [0.38, -0.58, 0.39]
+  rpy: [0.0, 0.524, 1.5708]  # pitched 30 deg down, looking along +y
+  width: 1280
+  height: 720
+  horizontal_fov: 1.48       # rad (about 85 deg)
+  update_rate: 5             # Hz
+
+room:
+  # Background behind the table. The wall is an obstacle for motion planning:
+  # the robot (and what it holds) keeps in front of y = wall_y (planning/skills.py
+  # WALL_MARGIN). It is at the table's back edge, where the frame uprights
+  # stand; the robot may move anywhere else above and around the table.
+  wall_y: 0.44               # wall plane behind the table
+  trunking_height: 0.16      # white cable trunking along the wall
+  socket_x: [0.10, 0.30, 0.50]  # centres of the three socket plates on the trunking (estimated)
+  sill_z: 0.16               # window sill (grey stone) top, above the table top
+  sill_depth: 0.30
+  window_height: 0.9
+  uprights_x: [-0.24, 0.92]  # aluminium uprights at the back of the table (estimated)
+  crossbar_z: 1.38           # bar joining the uprights at the top (estimated)
+
+# Where items may be put on the table: by the problem generator, and by the
+# solutions when they put an item down (put-on-table). Points must also be
+# reachable (checked with inverse kinematics) and visible to the camera.
+placement:
+  # Items stand on the blue board (their footprints inside these ranges).
+  x_range: [0.093, 0.773]
+  y_range: [-0.28, 0.29]
+  edge_margin: 0.025         # minimum distance between an item and the table edge
+  robot_keepout_radius: 0.17 # around the robot base axis
+  basket_margin: 0.03        # gap between items and the basket wall
+  object_clearance: 0.020    # gap between items (room for the fingers is checked per grasp)
+  max_reach: 0.74            # horizontal distance from the base axis
+  min_reach: 0.20

@@ -1,0 +1,16 @@
+newmtl green_mug_body
+Ka 0.5500 0.7800 0.1200
+Kd 0.5500 0.7800 0.1200
+Ks 0.300 0.300 0.300
+Ns 30.0
+d 1.0
+illum 2
+
+newmtl green_mug_handle
+Ka 0.8500 0.8600 0.8000
+Kd 0.8500 0.8600 0.8000
+Ks 0.400 0.400 0.400
+Ns 40.0
+d 1.0
+illum 2
+

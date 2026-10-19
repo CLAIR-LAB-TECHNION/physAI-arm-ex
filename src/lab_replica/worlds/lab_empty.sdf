@@ -1,0 +1,109 @@
+<?xml version="1.0"?>
+<sdf version="1.8">
+  <world name="lab">
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+    <plugin filename="ignition-gazebo-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="ignition-gazebo-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="ignition-gazebo-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="ignition-gazebo-sensors-system" name="gz::sim::systems::Sensors"><render_engine>ogre2</render_engine></plugin>
+    <gravity>0 0 -9.81</gravity>
+    <scene>
+      <ambient>0.42 0.42 0.42 1</ambient>
+      <background>0.85 0.88 0.9 1</background>
+      <shadows>true</shadows>
+    </scene>
+    <gui fullscreen="0">
+      <plugin filename="MinimalScene" name="3D View">
+        <ignition-gui><title>3D View</title><property type="bool" key="showTitleBar">false</property><property type="string" key="state">docked</property></ignition-gui>
+        <engine>ogre2</engine><scene>scene</scene>
+        <ambient_light>0.5 0.5 0.5</ambient_light><background_color>0.85 0.88 0.9</background_color>
+        <camera_pose>0.38 -0.58 0.39 0 0.524 1.5708</camera_pose>
+        <camera_clip><near>0.03</near><far>100</far></camera_clip>
+      </plugin>
+      <plugin filename="EntityContextMenuPlugin" name="Entity context menu">
+        <ignition-gui><property key="state" type="string">floating</property><property key="width" type="double">5</property><property key="height" type="double">5</property><property key="showTitleBar" type="bool">false</property></ignition-gui>
+      </plugin>
+      <plugin filename="GzSceneManager" name="Scene Manager">
+        <ignition-gui><property key="state" type="string">floating</property><property key="width" type="double">5</property><property key="height" type="double">5</property><property key="showTitleBar" type="bool">false</property></ignition-gui>
+      </plugin>
+      <plugin filename="InteractiveViewControl" name="Interactive view control">
+        <ignition-gui><property key="state" type="string">floating</property><property key="width" type="double">5</property><property key="height" type="double">5</property><property key="showTitleBar" type="bool">false</property></ignition-gui>
+      </plugin>
+      <plugin filename="CameraTracking" name="Camera Tracking">
+        <ignition-gui><property key="state" type="string">floating</property><property key="width" type="double">5</property><property key="height" type="double">5</property><property key="showTitleBar" type="bool">false</property></ignition-gui>
+      </plugin>
+      <plugin filename="MarkerManager" name="Marker manager">
+        <ignition-gui><property key="state" type="string">floating</property><property key="width" type="double">5</property><property key="height" type="double">5</property><property key="showTitleBar" type="bool">false</property></ignition-gui>
+      </plugin>
+      <plugin filename="SelectEntities" name="Select Entities">
+        <ignition-gui><property key="state" type="string">floating</property><property key="width" type="double">5</property><property key="height" type="double">5</property><property key="showTitleBar" type="bool">false</property></ignition-gui>
+      </plugin>
+      <plugin filename="VisualizationCapabilities" name="Visualization Capabilities">
+        <ignition-gui><property key="state" type="string">floating</property><property key="width" type="double">5</property><property key="height" type="double">5</property><property key="showTitleBar" type="bool">false</property></ignition-gui>
+      </plugin>
+      <plugin filename="WorldControl" name="World control">
+        <ignition-gui><title>World control</title><property type="bool" key="showTitleBar">false</property><property type="bool" key="resizable">false</property><property type="double" key="height">72</property><property type="double" key="width">121</property><property type="double" key="z">1</property><property type="string" key="state">floating</property>
+          <anchors target="3D View"><line own="left" target="left"/><line own="bottom" target="bottom"/></anchors></ignition-gui>
+        <play_pause>true</play_pause><step>true</step><start_paused>false</start_paused>
+      </plugin>
+      <plugin filename="WorldStats" name="World stats">
+        <ignition-gui><title>World stats</title><property type="bool" key="showTitleBar">false</property><property type="bool" key="resizable">false</property><property type="double" key="height">110</property><property type="double" key="width">290</property><property type="double" key="z">1</property><property type="string" key="state">floating</property>
+          <anchors target="3D View"><line own="right" target="right"/><line own="bottom" target="bottom"/></anchors></ignition-gui>
+        <sim_time>true</sim_time><real_time>true</real_time><real_time_factor>true</real_time_factor><iterations>true</iterations>
+      </plugin>
+    </gui>
+    <light type="directional" name="ceiling">
+      <pose>0.3 -0.5 3 0 0 0</pose>
+      <cast_shadows>true</cast_shadows>
+      <diffuse>0.55 0.55 0.53 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>0.15 0.35 -0.92</direction>
+    </light>
+    <light type="point" name="fill">
+      <pose>0.4 -1.2 1.4 0 0 0</pose>
+      <cast_shadows>false</cast_shadows>
+      <diffuse>0.25 0.25 0.25 1</diffuse>
+      <specular>0.05 0.05 0.05 1</specular>
+      <attenuation><range>8</range><constant>0.6</constant><linear>0.05</linear><quadratic>0.0</quadratic></attenuation>
+    </light>
+    
+    <include>
+      <uri>model://lab_room</uri>
+      <name>lab_room</name>
+      <pose>0 0 0 0 0 0</pose><static>true</static>
+    </include>
+    
+    <include>
+      <uri>model://lab_table</uri>
+      <name>lab_table</name>
+      <pose>0 0 0 0 0 0</pose><static>true</static>
+    </include>
+    
+    <model name="lab_camera">
+      <static>true</static>
+      <pose>0.38 -0.58 0.39 0 0.524 1.5708</pose>
+      <link name="link">
+        <sensor name="rgb" type="camera">
+          <always_on>1</always_on>
+          <update_rate>5</update_rate>
+          <topic>/lab_camera/image</topic>
+          <camera>
+            <horizontal_fov>1.48</horizontal_fov>
+            <image><width>1280</width><height>720</height><format>R8G8B8</format></image>
+            <clip><near>0.05</near><far>20</far></clip>
+            
+          </camera>
+        </sensor>
+      </link>
+    </model>
+
+    <include>
+      <uri>model://basket</uri>
+      <name>basket</name>
+      <pose>0.775 0.06 0 0 0 0</pose>
+    </include>
+  </world>
+</sdf>

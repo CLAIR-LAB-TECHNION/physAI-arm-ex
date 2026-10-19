@@ -1,0 +1,106 @@
+{
+ "task": "t_newcell_3",
+ "goal": "(and (in-basket blue-cup-with-yellow-stripe) (in-basket green-mug))",
+ "init": [
+  "(in-basket roll-of-black-tape)",
+  "(on-table blue-block)",
+  "(on-table blue-cup-with-yellow-stripe)",
+  "(on-table green-block)",
+  "(on-table green-mug)",
+  "(on-table orange-block)",
+  "(on-table red-can)",
+  "(on-table red-spray-bottle)",
+  "(on-table roll-of-blue-tape)",
+  "(on-table roll-of-green-tape)",
+  "(on-table yellow-block)",
+  "(robot-gripping red-block)"
+ ],
+ "plan": [
+  "(put-in-basket red-block)",
+  "(pick-up blue-cup-with-yellow-stripe)",
+  "(put-in-basket blue-cup-with-yellow-stripe)",
+  "(pick-up green-mug)",
+  "(put-in-basket green-mug)"
+ ],
+ "started": "2026-10-18 16:41:16",
+ "attach": false,
+ "ok": true,
+ "actions": [
+  {
+   "action": "(pick-up red-block)",
+   "setup": true,
+   "ok": true,
+   "message": "holding red-block (width 50 mm)",
+   "held": "red-block",
+   "seconds": 54.6
+  },
+  {
+   "action": "(put-in-basket red-block)",
+   "ok": true,
+   "message": "put red-block at (0.554, 0.050) on the basket",
+   "held": "",
+   "seconds": 34.5
+  },
+  {
+   "action": "(pick-up blue-cup-with-yellow-stripe)",
+   "ok": true,
+   "message": "holding blue-cup-with-yellow-stripe (width 64 mm)",
+   "held": "blue-cup-with-yellow-stripe",
+   "seconds": 35.7
+  },
+  {
+   "action": "(put-in-basket blue-cup-with-yellow-stripe)",
+   "ok": true,
+   "message": "put blue-cup-with-yellow-stripe at (0.484, 0.010) on the basket",
+   "held": "",
+   "seconds": 25.2
+  },
+  {
+   "action": "(pick-up green-mug)",
+   "ok": true,
+   "message": "holding green-mug (width 70 mm)",
+   "held": "green-mug",
+   "seconds": 40.8
+  },
+  {
+   "action": "(put-in-basket green-mug)",
+   "ok": true,
+   "message": "put green-mug at (0.524, -0.070) on the basket",
+   "held": "",
+   "seconds": 36.1
+  }
+ ],
+ "failed_at": null,
+ "state": [
+  "(in-basket blue-cup-with-yellow-stripe)",
+  "(in-basket green-mug)",
+  "(in-basket red-block)",
+  "(in-basket roll-of-black-tape)",
+  "(on-table blue-block)",
+  "(on-table green-block)",
+  "(on-table orange-block)",
+  "(on-table red-can)",
+  "(on-table red-spray-bottle)",
+  "(on-table roll-of-blue-tape)",
+  "(on-table roll-of-green-tape)",
+  "(on-table yellow-block)",
+  "(robot-gripper-empty)"
+ ],
+ "seconds": 227.0,
+ "goal_holds": true,
+ "true_state": [
+  "(in-basket blue-cup-with-yellow-stripe)",
+  "(in-basket green-mug)",
+  "(in-basket red-block)",
+  "(in-basket roll-of-black-tape)",
+  "(on-table blue-block)",
+  "(on-table green-block)",
+  "(on-table orange-block)",
+  "(on-table red-can)",
+  "(on-table red-spray-bottle)",
+  "(on-table roll-of-blue-tape)",
+  "(on-table roll-of-green-tape)",
+  "(on-table yellow-block)",
+  "(robot-gripper-empty)"
+ ]
+}

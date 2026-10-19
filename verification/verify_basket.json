@@ -1,0 +1,182 @@
+{
+ "actions": [
+  {
+   "problem": "problem_00720",
+   "action": "(pick-up green-mug)",
+   "server_ok": true,
+   "message": "holding green-mug (width 65 mm)",
+   "seconds": 58.5,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.0,
+   "ok": true
+  },
+  {
+   "problem": "problem_00720",
+   "action": "(put-in-basket green-mug)",
+   "server_ok": true,
+   "message": "put green-mug at (0.352, 0.051) on the basket",
+   "seconds": 92.1,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.0,
+   "ok": true
+  },
+  {
+   "problem": "problem_00720",
+   "action": "(pick-up roll-of-green-tape)",
+   "server_ok": true,
+   "message": "holding roll-of-green-tape (width 82 mm)",
+   "seconds": 56.9,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.7,
+   "ok": true
+  },
+  {
+   "problem": "problem_00720",
+   "action": "(put-in-basket roll-of-green-tape)",
+   "server_ok": true,
+   "message": "put roll-of-green-tape at (0.322, 0.091) on the basket",
+   "seconds": 44.6,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 142.7,
+   "ok": true
+  },
+  {
+   "problem": "problem_00721",
+   "action": "(pick-up blue-cup-with-yellow-stripe)",
+   "server_ok": true,
+   "message": "holding blue-cup-with-yellow-stripe (width 72 mm)",
+   "seconds": 54.7,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 3.0,
+   "ok": true
+  },
+  {
+   "problem": "problem_00721",
+   "action": "(put-in-basket blue-cup-with-yellow-stripe)",
+   "server_ok": true,
+   "message": "put blue-cup-with-yellow-stripe at (0.352, 0.051) on the basket",
+   "seconds": 54.1,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.0,
+   "ok": true
+  },
+  {
+   "problem": "problem_00721",
+   "action": "(pick-up red-can)",
+   "server_ok": true,
+   "message": "holding red-can (width 63 mm)",
+   "seconds": 53.0,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.5,
+   "ok": true
+  },
+  {
+   "problem": "problem_00721",
+   "action": "(put-in-basket red-can)",
+   "server_ok": false,
+   "message": "no placement for red-can on the basket: no free spot",
+   "seconds": 29.9,
+   "effect_ok": false,
+   "unchanged_ok": true,
+   "others": [],
+   "missing": [
+    "(in-basket red-can)",
+    "(robot-gripper-empty)"
+   ],
+   "extra": [
+    "(robot-gripping red-can)"
+   ],
+   "item_tilt": 30.0,
+   "ok": false
+  },
+  {
+   "problem": "problem_00722",
+   "action": "(pick-up red-spray-bottle)",
+   "server_ok": true,
+   "message": "holding red-spray-bottle (width 34 mm)",
+   "seconds": 54.1,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.1,
+   "ok": true
+  },
+  {
+   "problem": "problem_00722",
+   "action": "(put-in-basket red-spray-bottle)",
+   "server_ok": true,
+   "message": "put red-spray-bottle at (0.352, 0.051) on the basket",
+   "seconds": 66.4,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.0,
+   "ok": true
+  },
+  {
+   "problem": "problem_00722",
+   "action": "(pick-up red-can)",
+   "server_ok": true,
+   "message": "holding red-can (width 62 mm)",
+   "seconds": 57.8,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.9,
+   "ok": true
+  },
+  {
+   "problem": "problem_00722",
+   "action": "(put-in-basket red-can)",
+   "server_ok": false,
+   "message": "no placement for red-can on the basket: no free spot",
+   "seconds": 36.8,
+   "effect_ok": false,
+   "unchanged_ok": true,
+   "others": [],
+   "missing": [
+    "(in-basket red-can)",
+    "(robot-gripper-empty)"
+   ],
+   "extra": [
+    "(robot-gripping red-can)"
+   ],
+   "item_tilt": 31.8,
+   "ok": false
+  }
+ ]
+}

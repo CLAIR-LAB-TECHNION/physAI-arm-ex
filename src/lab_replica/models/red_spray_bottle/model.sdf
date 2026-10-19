@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<sdf version="1.8">
+  <model name="red_spray_bottle">
+    <link name="link">
+      <inertial><pose>0.00131039 0 -0.0322521 0 0 0</pose><mass>0.3</mass><inertia><ixx>0.00159976</ixx><ixy>0</ixy><ixz>-5.49391e-05</ixz><iyy>0.00175192</iyy><iyz>0</iyz><izz>0.000343332</izz></inertia></inertial>
+      <collision name="c0"><pose>0 0 -0.09 0 0 0</pose><geometry><box><size>0.11155 0.068 0.09</size></box></geometry><surface><friction><ode><mu>0.9</mu><mu2>0.9</mu2></ode></friction><contact><ode><min_depth>0.0005</min_depth><max_vel>0.1</max_vel></ode></contact></surface></collision>
+      <collision name="c1"><pose>0 0 -0.007 0 0 0</pose><geometry><box><size>0.092 0.06256 0.076</size></box></geometry><surface><friction><ode><mu>0.9</mu><mu2>0.9</mu2></ode></friction><contact><ode><min_depth>0.0005</min_depth><max_vel>0.1</max_vel></ode></contact></surface></collision>
+      <collision name="c2"><pose>0 0 0.047 0 0 0</pose><geometry><box><size>0.05175 0.0408 0.036</size></box></geometry><surface><friction><ode><mu>0.9</mu><mu2>0.9</mu2></ode></friction><contact><ode><min_depth>0.0005</min_depth><max_vel>0.1</max_vel></ode></contact></surface></collision>
+      <collision name="c3"><pose>0 0 0.0725 0 0 0</pose><geometry><cylinder><radius>0.016</radius><length>0.019</length></cylinder></geometry><surface><friction><ode><mu>0.9</mu><mu2>0.9</mu2></ode></friction><contact><ode><min_depth>0.0005</min_depth><max_vel>0.1</max_vel></ode></contact></surface></collision>
+      <collision name="c4"><pose>0.012 0 0.1075 0 0 0</pose><geometry><box><size>0.075 0.036 0.055</size></box></geometry><surface><friction><ode><mu>0.9</mu><mu2>0.9</mu2></ode></friction><contact><ode><min_depth>0.0005</min_depth><max_vel>0.1</max_vel></ode></contact></surface></collision>
+      <visual name="visual">
+        <geometry><mesh><uri>model://red_spray_bottle/meshes/red_spray_bottle.obj</uri></mesh></geometry>
+      </visual>
+    </link>
+  </model>
+</sdf>

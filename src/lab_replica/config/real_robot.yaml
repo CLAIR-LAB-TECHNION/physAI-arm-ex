@@ -1,0 +1,25 @@
+# CONNECTION TO THE REAL ROBOT. Read by real.launch.py (no rebuild needed).
+
+# Address of the UR controller (PolyScope: Settings > System > Network).
+ip: 10.240.10.4
+
+# false: you start the "External Control" program on the teach pendant
+#        (press Play) after launching; its "Host IP" must be this PC.
+# true:  the driver starts its program itself; the robot must be in Remote
+#        Control mode.
+headless_mode: false
+
+# passthrough_trajectory_controller: the robot interpolates each whole motion
+#   itself; tolerates a jittery network (recommended).
+# scaled_joint_trajectory_controller: ROS streams setpoints at 500 Hz.
+controller: passthrough_trajectory_controller
+
+# The RG6 is cabled to the robot's tool flange and driven by the OnRobot
+# URCap on the controller, which serves XML-RPC on this port of `ip`.
+gripper_port: 41414
+
+# true: real.launch.py (run/1_robot.sh real) starts the UR driver on this
+# computer. false: it only starts the RG6 driver; the UR driver runs on
+# another computer of the same ROS_DOMAIN_ID. In the lab it runs on "air":
+#   ros2 launch ur_robot_driver ur_control.launch.py ur_type:=ur5e robot_ip:=10.240.10.4 initial_joint_controller:=passthrough_trajectory_controller
+ur_driver: false

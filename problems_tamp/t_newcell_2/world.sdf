@@ -1,0 +1,169 @@
+<?xml version="1.0"?>
+<sdf version="1.8">
+  <world name="lab">
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+    <plugin filename="ignition-gazebo-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="ignition-gazebo-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="ignition-gazebo-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="ignition-gazebo-sensors-system" name="gz::sim::systems::Sensors"><render_engine>ogre2</render_engine></plugin>
+    <gravity>0 0 -9.81</gravity>
+    <scene>
+      <ambient>0.42 0.42 0.42 1</ambient>
+      <background>0.85 0.88 0.9 1</background>
+      <shadows>true</shadows>
+    </scene>
+    <gui fullscreen="0">
+      <plugin filename="MinimalScene" name="3D View">
+        <ignition-gui><title>3D View</title><property type="bool" key="showTitleBar">false</property><property type="string" key="state">docked</property></ignition-gui>
+        <engine>ogre2</engine><scene>scene</scene>
+        <ambient_light>0.5 0.5 0.5</ambient_light><background_color>0.85 0.88 0.9</background_color>
+        <camera_pose>0.38 -0.58 0.39 0 0.524 1.5708</camera_pose>
+        <camera_clip><near>0.03</near><far>100</far></camera_clip>
+      </plugin>
+      <plugin filename="EntityContextMenuPlugin" name="Entity context menu">
+        <ignition-gui><property key="state" type="string">floating</property><property key="width" type="double">5</property><property key="height" type="double">5</property><property key="showTitleBar" type="bool">false</property></ignition-gui>
+      </plugin>
+      <plugin filename="GzSceneManager" name="Scene Manager">
+        <ignition-gui><property key="state" type="string">floating</property><property key="width" type="double">5</property><property key="height" type="double">5</property><property key="showTitleBar" type="bool">false</property></ignition-gui>
+      </plugin>
+      <plugin filename="InteractiveViewControl" name="Interactive view control">
+        <ignition-gui><property key="state" type="string">floating</property><property key="width" type="double">5</property><property key="height" type="double">5</property><property key="showTitleBar" type="bool">false</property></ignition-gui>
+      </plugin>
+      <plugin filename="CameraTracking" name="Camera Tracking">
+        <ignition-gui><property key="state" type="string">floating</property><property key="width" type="double">5</property><property key="height" type="double">5</property><property key="showTitleBar" type="bool">false</property></ignition-gui>
+      </plugin>
+      <plugin filename="MarkerManager" name="Marker manager">
+        <ignition-gui><property key="state" type="string">floating</property><property key="width" type="double">5</property><property key="height" type="double">5</property><property key="showTitleBar" type="bool">false</property></ignition-gui>
+      </plugin>
+      <plugin filename="SelectEntities" name="Select Entities">
+        <ignition-gui><property key="state" type="string">floating</property><property key="width" type="double">5</property><property key="height" type="double">5</property><property key="showTitleBar" type="bool">false</property></ignition-gui>
+      </plugin>
+      <plugin filename="VisualizationCapabilities" name="Visualization Capabilities">
+        <ignition-gui><property key="state" type="string">floating</property><property key="width" type="double">5</property><property key="height" type="double">5</property><property key="showTitleBar" type="bool">false</property></ignition-gui>
+      </plugin>
+      <plugin filename="WorldControl" name="World control">
+        <ignition-gui><title>World control</title><property type="bool" key="showTitleBar">false</property><property type="bool" key="resizable">false</property><property type="double" key="height">72</property><property type="double" key="width">121</property><property type="double" key="z">1</property><property type="string" key="state">floating</property>
+          <anchors target="3D View"><line own="left" target="left"/><line own="bottom" target="bottom"/></anchors></ignition-gui>
+        <play_pause>true</play_pause><step>true</step><start_paused>false</start_paused>
+      </plugin>
+      <plugin filename="WorldStats" name="World stats">
+        <ignition-gui><title>World stats</title><property type="bool" key="showTitleBar">false</property><property type="bool" key="resizable">false</property><property type="double" key="height">110</property><property type="double" key="width">290</property><property type="double" key="z">1</property><property type="string" key="state">floating</property>
+          <anchors target="3D View"><line own="right" target="right"/><line own="bottom" target="bottom"/></anchors></ignition-gui>
+        <sim_time>true</sim_time><real_time>true</real_time><real_time_factor>true</real_time_factor><iterations>true</iterations>
+      </plugin>
+    </gui>
+    <light type="directional" name="ceiling">
+      <pose>0.3 -0.5 3 0 0 0</pose>
+      <cast_shadows>true</cast_shadows>
+      <diffuse>0.55 0.55 0.53 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>0.15 0.35 -0.92</direction>
+    </light>
+    <light type="point" name="fill">
+      <pose>0.4 -1.2 1.4 0 0 0</pose>
+      <cast_shadows>false</cast_shadows>
+      <diffuse>0.25 0.25 0.25 1</diffuse>
+      <specular>0.05 0.05 0.05 1</specular>
+      <attenuation><range>8</range><constant>0.6</constant><linear>0.05</linear><quadratic>0.0</quadratic></attenuation>
+    </light>
+    
+    <include>
+      <uri>model://lab_room</uri>
+      <name>lab_room</name>
+      <pose>0 0 0 0 0 0</pose><static>true</static>
+    </include>
+    
+    <include>
+      <uri>model://lab_table</uri>
+      <name>lab_table</name>
+      <pose>0 0 0 0 0 0</pose><static>true</static>
+    </include>
+    
+    <model name="lab_camera">
+      <static>true</static>
+      <pose>0.38 -0.58 0.39 0 0.524 1.5708</pose>
+      <link name="link">
+        <sensor name="rgb" type="camera">
+          <always_on>1</always_on>
+          <update_rate>5</update_rate>
+          <topic>/lab_camera/image</topic>
+          <camera>
+            <horizontal_fov>1.48</horizontal_fov>
+            <image><width>1280</width><height>720</height><format>R8G8B8</format></image>
+            <clip><near>0.05</near><far>20</far></clip>
+            
+          </camera>
+        </sensor>
+      </link>
+    </model>
+
+    <include>
+      <uri>model://basket</uri>
+      <name>basket</name>
+      <pose>0.629782 0.0674497 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://roll_of_black_tape</uri>
+      <name>roll_of_black_tape</name>
+      <pose>0.222899 0.167254 0.0124991 6.81447e-18 -4.56031e-19 -1.96586</pose>
+    </include>
+    <include>
+      <uri>model://red_can</uri>
+      <name>red_can</name>
+      <pose>0.231034 -0.183241 0.0724991 3.80524e-19 -3.03502e-18 0.888996</pose>
+    </include>
+    <include>
+      <uri>model://red_spray_bottle</uri>
+      <name>red_spray_bottle</name>
+      <pose>0.351905 0.0778423 0.134999 -6.46974e-19 7.02531e-10 1.58023</pose>
+    </include>
+    <include>
+      <uri>model://roll_of_green_tape</uri>
+      <name>roll_of_green_tape</name>
+      <pose>0.610423 -0.215582 0.00999913 3.36643e-18 -4.01177e-18 1.55645</pose>
+    </include>
+    <include>
+      <uri>model://blue_block</uri>
+      <name>blue_block</name>
+      <pose>0.247489 0.047081 0.0249991 2.322e-18 -1.30096e-18 0.904645</pose>
+    </include>
+    <include>
+      <uri>model://red_block</uri>
+      <name>red_block</name>
+      <pose>0.149842 -0.213803 0.0249991 -5.54373e-18 -4.58451e-18 0.00638568</pose>
+    </include>
+    <include>
+      <uri>model://yellow_block</uri>
+      <name>yellow_block</name>
+      <pose>0.301155 -0.207853 0.0249991 8.78872e-18 2.43419e-18 2.98334</pose>
+    </include>
+    <include>
+      <uri>model://green_block</uri>
+      <name>green_block</name>
+      <pose>0.35094 0.22096 0.0249991 -1.30167e-17 -7.35366e-18 1.12608</pose>
+    </include>
+    <include>
+      <uri>model://green_mug</uri>
+      <name>green_mug</name>
+      <pose>0.250787 -0.0778664 0.0449991 9.45459e-19 8.72891e-09 0.885965</pose>
+    </include>
+    <include>
+      <uri>model://blue_cup_with_yellow_stripe</uri>
+      <name>blue_cup_with_yellow_stripe</name>
+      <pose>0.417421 -0.1443 0.0599991 1.45374e-18 -3.98815e-18 1.44413</pose>
+    </include>
+    <include>
+      <uri>model://orange_block</uri>
+      <name>orange_block</name>
+      <pose>0.129436 0.19788 0.0199991 -6.42733e-18 4.45335e-18 2.99941</pose>
+    </include>
+    <include>
+      <uri>model://roll_of_blue_tape</uri>
+      <name>roll_of_blue_tape</name>
+      <pose>0.502009 -0.214535 0.0239991 2.72461e-17 -7.06251e-18 -2.79541</pose>
+    </include>
+  </world>
+</sdf>

@@ -1,0 +1,81 @@
+{
+ "task": "t_newcell_2",
+ "goal": "(and (in-basket red-spray-bottle) (robot-gripping yellow-block))",
+ "init": [
+  "(on-table blue-block)",
+  "(on-table blue-cup-with-yellow-stripe)",
+  "(on-table green-block)",
+  "(on-table green-mug)",
+  "(on-table orange-block)",
+  "(on-table red-block)",
+  "(on-table red-can)",
+  "(on-table red-spray-bottle)",
+  "(on-table roll-of-black-tape)",
+  "(on-table roll-of-blue-tape)",
+  "(on-table roll-of-green-tape)",
+  "(on-table yellow-block)",
+  "(robot-gripper-empty)"
+ ],
+ "plan": [
+  "(pick-up red-spray-bottle)",
+  "(put-in-basket red-spray-bottle)",
+  "(pick-up yellow-block)"
+ ],
+ "started": "2026-10-18 16:37:12",
+ "attach": false,
+ "ok": true,
+ "actions": [
+  {
+   "action": "(pick-up red-spray-bottle)",
+   "ok": true,
+   "message": "holding red-spray-bottle (width 36 mm)",
+   "held": "red-spray-bottle",
+   "seconds": 42.8
+  },
+  {
+   "action": "(put-in-basket red-spray-bottle)",
+   "ok": true,
+   "message": "put red-spray-bottle at (0.609, 0.044) on the basket",
+   "held": "",
+   "seconds": 52.0
+  },
+  {
+   "action": "(pick-up yellow-block)",
+   "ok": true,
+   "message": "holding yellow-block (width 50 mm)",
+   "held": "yellow-block",
+   "seconds": 39.2
+  }
+ ],
+ "failed_at": null,
+ "state": [
+  "(in-basket red-spray-bottle)",
+  "(on-table blue-block)",
+  "(on-table blue-cup-with-yellow-stripe)",
+  "(on-table green-block)",
+  "(on-table green-mug)",
+  "(on-table orange-block)",
+  "(on-table red-block)",
+  "(on-table red-can)",
+  "(on-table roll-of-black-tape)",
+  "(on-table roll-of-blue-tape)",
+  "(on-table roll-of-green-tape)",
+  "(robot-gripping yellow-block)"
+ ],
+ "seconds": 134.0,
+ "goal_holds": true,
+ "true_state": [
+  "(in-basket red-spray-bottle)",
+  "(on-table blue-block)",
+  "(on-table blue-cup-with-yellow-stripe)",
+  "(on-table green-block)",
+  "(on-table green-mug)",
+  "(on-table orange-block)",
+  "(on-table red-block)",
+  "(on-table red-can)",
+  "(on-table roll-of-black-tape)",
+  "(on-table roll-of-blue-tape)",
+  "(on-table roll-of-green-tape)",
+  "(robot-gripping yellow-block)"
+ ]
+}

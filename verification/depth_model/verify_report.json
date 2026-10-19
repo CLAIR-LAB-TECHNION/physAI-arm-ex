@@ -1,0 +1,686 @@
+{
+ "actions": [
+  {
+   "problem": "all_on_table",
+   "action": "(pick-up red-can)",
+   "server_ok": true,
+   "message": "holding red-can (width 56 mm)",
+   "seconds": 36.5,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.9,
+   "ok": true
+  },
+  {
+   "problem": "all_on_table",
+   "action": "(put-in-basket red-can)",
+   "server_ok": true,
+   "message": "put red-can at (0.370, 0.040) on the basket",
+   "seconds": 21.1,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.0,
+   "ok": true
+  },
+  {
+   "problem": "all_on_table",
+   "action": "(pick-up red-spray-bottle)",
+   "server_ok": false,
+   "message": "cannot pick red-spray-bottle: line IK failed at [0.652 0.08  0.674]",
+   "seconds": 33.4,
+   "effect_ok": false,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [
+    "(robot-gripping red-spray-bottle)"
+   ],
+   "extra": [
+    "(on-table red-spray-bottle)",
+    "(robot-gripper-empty)"
+   ],
+   "item_tilt": 0.0,
+   "ok": false
+  },
+  {
+   "problem": "all_on_table",
+   "action": "(pick-up blue-block)",
+   "server_ok": true,
+   "message": "holding blue-block (width 50 mm)",
+   "seconds": 70.5,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 17.2,
+   "ok": true
+  },
+  {
+   "problem": "all_on_table",
+   "action": "(put-on-table blue-block)",
+   "server_ok": true,
+   "message": "put blue-block at (0.110, -0.180) on the table",
+   "seconds": 53.7,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.0,
+   "ok": true
+  },
+  {
+   "problem": "all_on_table",
+   "action": "(pick-up red-block)",
+   "server_ok": true,
+   "message": "holding red-block (width 50 mm)",
+   "seconds": 39.8,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.0,
+   "ok": true
+  },
+  {
+   "problem": "all_on_table",
+   "action": "(put-in-basket red-block)",
+   "server_ok": true,
+   "message": "put red-block at (0.420, 0.090) on the basket",
+   "seconds": 31.0,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.0,
+   "ok": true
+  },
+  {
+   "problem": "all_on_table",
+   "action": "(pick-up yellow-block)",
+   "server_ok": true,
+   "message": "holding yellow-block (width 50 mm)",
+   "seconds": 52.0,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.0,
+   "ok": true
+  },
+  {
+   "problem": "problem_00706",
+   "action": "(pick-up orange-block)",
+   "server_ok": true,
+   "message": "holding orange-block (width 40 mm)",
+   "seconds": 37.7,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.0,
+   "ok": true
+  },
+  {
+   "problem": "problem_00706",
+   "action": "(put-on-table orange-block)",
+   "server_ok": true,
+   "message": "put orange-block at (0.530, 0.240) on the table",
+   "seconds": 29.3,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.0,
+   "ok": true
+  },
+  {
+   "problem": "problem_00706",
+   "action": "(pick-up red-spray-bottle)",
+   "server_ok": false,
+   "message": "cannot pick red-spray-bottle: line IK failed at [ 0.667 -0.021  0.664]",
+   "seconds": 33.3,
+   "effect_ok": false,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [
+    "(robot-gripping red-spray-bottle)"
+   ],
+   "extra": [
+    "(on-table red-spray-bottle)",
+    "(robot-gripper-empty)"
+   ],
+   "item_tilt": 0.0,
+   "ok": false
+  },
+  {
+   "problem": "problem_00706",
+   "action": "(pick-up green-mug)",
+   "server_ok": true,
+   "message": "holding green-mug (width 70 mm)",
+   "seconds": 35.2,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.0,
+   "ok": true
+  },
+  {
+   "problem": "problem_00706",
+   "action": "(put-in-basket green-mug)",
+   "server_ok": true,
+   "message": "put green-mug at (0.420, 0.060) on the basket",
+   "seconds": 64.2,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.0,
+   "ok": true
+  },
+  {
+   "problem": "problem_00706",
+   "action": "(pick-up roll-of-black-tape)",
+   "server_ok": true,
+   "message": "holding roll-of-black-tape (width 106 mm)",
+   "seconds": 56.5,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.0,
+   "ok": true
+  },
+  {
+   "problem": "problem_00706",
+   "action": "(put-on-table roll-of-black-tape)",
+   "server_ok": true,
+   "message": "put roll-of-black-tape at (0.660, 0.170) on the table",
+   "seconds": 45.0,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.0,
+   "ok": true
+  },
+  {
+   "problem": "problem_00706",
+   "action": "(pick-up red-spray-bottle)",
+   "server_ok": false,
+   "message": "cannot pick red-spray-bottle: line IK failed at [ 0.667 -0.021  0.664]",
+   "seconds": 55.9,
+   "effect_ok": false,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [
+    "(robot-gripping red-spray-bottle)"
+   ],
+   "extra": [
+    "(on-table red-spray-bottle)",
+    "(robot-gripper-empty)"
+   ],
+   "item_tilt": 0.0,
+   "ok": false
+  },
+  {
+   "problem": "problem_00708",
+   "action": "(pick-up roll-of-green-tape)",
+   "server_ok": true,
+   "message": "holding roll-of-green-tape (width 83 mm)",
+   "seconds": 34.4,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.1,
+   "ok": true
+  },
+  {
+   "problem": "problem_00708",
+   "action": "(put-in-basket roll-of-green-tape)",
+   "server_ok": true,
+   "message": "put roll-of-green-tape at (0.360, 0.110) on the basket",
+   "seconds": 22.7,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 49.4,
+   "ok": true
+  },
+  {
+   "problem": "problem_00708",
+   "action": "(pick-up blue-cup-with-yellow-stripe)",
+   "server_ok": true,
+   "message": "holding blue-cup-with-yellow-stripe (width 63 mm)",
+   "seconds": 42.3,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 1.2,
+   "ok": true
+  },
+  {
+   "problem": "problem_00708",
+   "action": "(put-on-table blue-cup-with-yellow-stripe)",
+   "server_ok": true,
+   "message": "put blue-cup-with-yellow-stripe at (0.170, -0.150) on the table",
+   "seconds": 30.1,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.0,
+   "ok": true
+  },
+  {
+   "problem": "problem_00708",
+   "action": "(pick-up red-spray-bottle)",
+   "server_ok": false,
+   "message": "cannot pick red-spray-bottle: line IK failed at [ 0.613 -0.088  0.704]",
+   "seconds": 40.4,
+   "effect_ok": false,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [
+    "(robot-gripping red-spray-bottle)"
+   ],
+   "extra": [
+    "(on-table red-spray-bottle)",
+    "(robot-gripper-empty)"
+   ],
+   "item_tilt": 0.0,
+   "ok": false
+  },
+  {
+   "problem": "problem_00708",
+   "action": "(pick-up orange-block)",
+   "server_ok": true,
+   "message": "holding orange-block (width 40 mm)",
+   "seconds": 53.7,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.0,
+   "ok": true
+  },
+  {
+   "problem": "problem_00708",
+   "action": "(put-in-basket orange-block)",
+   "server_ok": true,
+   "message": "put orange-block at (0.310, 0.050) on the basket",
+   "seconds": 35.1,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.0,
+   "ok": true
+  },
+  {
+   "problem": "problem_00708",
+   "action": "(pick-up red-spray-bottle)",
+   "server_ok": false,
+   "message": "cannot pick red-spray-bottle: line IK failed at [ 0.613 -0.088  0.704]",
+   "seconds": 39.2,
+   "effect_ok": false,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [
+    "(robot-gripping red-spray-bottle)"
+   ],
+   "extra": [
+    "(on-table red-spray-bottle)",
+    "(robot-gripper-empty)"
+   ],
+   "item_tilt": 0.0,
+   "ok": false
+  },
+  {
+   "problem": "problem_00710",
+   "action": "(pick-up green-block)",
+   "server_ok": false,
+   "message": "cannot pick green-block: descend: gripper or object hits the basket wall",
+   "seconds": 20.8,
+   "effect_ok": false,
+   "unchanged_ok": false,
+   "others": [
+    "red-spray-bottle moved 2.3 cm, tilt 0 deg"
+   ],
+   "disturbed": [],
+   "missing": [
+    "(robot-gripping green-block)"
+   ],
+   "extra": [
+    "(on-table green-block)",
+    "(robot-gripper-empty)"
+   ],
+   "item_tilt": 0.0,
+   "ok": false
+  },
+  {
+   "problem": "problem_00710",
+   "action": "(pick-up roll-of-blue-tape)",
+   "server_ok": false,
+   "message": "cannot pick roll-of-blue-tape: descend: gripper or object hits the basket wall; lift: held object goes into the basket",
+   "seconds": 25.5,
+   "effect_ok": false,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [
+    "(robot-gripping roll-of-blue-tape)"
+   ],
+   "extra": [
+    "(on-table roll-of-blue-tape)",
+    "(robot-gripper-empty)"
+   ],
+   "item_tilt": 0.0,
+   "ok": false
+  },
+  {
+   "problem": "problem_00710",
+   "action": "(pick-up green-mug)",
+   "server_ok": false,
+   "message": "home: arm enters the basket",
+   "seconds": 27.9,
+   "effect_ok": false,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [
+    "(robot-gripping green-mug)"
+   ],
+   "extra": [
+    "(on-table green-mug)",
+    "(robot-gripper-empty)"
+   ],
+   "item_tilt": 0.0,
+   "ok": false
+  },
+  {
+   "problem": "problem_00710",
+   "action": "(pick-up red-block)",
+   "server_ok": false,
+   "message": "cannot pick red-block: descend: gripper or object hits the basket wall",
+   "seconds": 23.8,
+   "effect_ok": false,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [
+    "(robot-gripping red-block)"
+   ],
+   "extra": [
+    "(on-table red-block)",
+    "(robot-gripper-empty)"
+   ],
+   "item_tilt": 0.0,
+   "ok": false
+  },
+  {
+   "problem": "problem_00710",
+   "action": "(pick-up blue-block)",
+   "server_ok": true,
+   "message": "holding blue-block (width 50 mm)",
+   "seconds": 43.5,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.0,
+   "ok": true
+  },
+  {
+   "problem": "problem_00710",
+   "action": "(put-on-table blue-block)",
+   "server_ok": true,
+   "message": "put blue-block at (0.780, 0.200) on the table",
+   "seconds": 40.2,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.0,
+   "ok": true
+  },
+  {
+   "problem": "problem_00710",
+   "action": "(pick-up green-block)",
+   "server_ok": false,
+   "message": "cannot pick green-block: descend: gripper or object hits the basket wall",
+   "seconds": 21.9,
+   "effect_ok": false,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [
+    "(robot-gripping green-block)"
+   ],
+   "extra": [
+    "(on-table green-block)",
+    "(robot-gripper-empty)"
+   ],
+   "item_tilt": 0.0,
+   "ok": false
+  },
+  {
+   "problem": "problem_00710",
+   "action": "(pick-up roll-of-blue-tape)",
+   "server_ok": false,
+   "message": "cannot pick roll-of-blue-tape: descend: arm enters the basket; descend: gripper or object hits the basket wall",
+   "seconds": 21.8,
+   "effect_ok": false,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [
+    "(robot-gripping roll-of-blue-tape)"
+   ],
+   "extra": [
+    "(on-table roll-of-blue-tape)",
+    "(robot-gripper-empty)"
+   ],
+   "item_tilt": 0.0,
+   "ok": false
+  },
+  {
+   "problem": "problem_00712",
+   "action": "(pick-up roll-of-blue-tape)",
+   "server_ok": true,
+   "message": "holding roll-of-blue-tape (width 89 mm)",
+   "seconds": 39.9,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.0,
+   "ok": true
+  },
+  {
+   "problem": "problem_00712",
+   "action": "(put-in-basket roll-of-blue-tape)",
+   "server_ok": true,
+   "message": "put roll-of-blue-tape at (0.400, -0.010) on the basket",
+   "seconds": 23.7,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 90.0,
+   "ok": true
+  },
+  {
+   "problem": "problem_00712",
+   "action": "(pick-up red-spray-bottle)",
+   "server_ok": true,
+   "message": "holding red-spray-bottle (width 36 mm)",
+   "seconds": 50.4,
+   "effect_ok": true,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [],
+   "extra": [],
+   "item_tilt": 0.0,
+   "ok": true
+  },
+  {
+   "problem": "problem_00712",
+   "action": "(put-on-table red-spray-bottle)",
+   "server_ok": false,
+   "message": "to top-down: held object hits an unrecognised or unseen object",
+   "seconds": 20.0,
+   "effect_ok": false,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [
+    "(on-table red-spray-bottle)",
+    "(robot-gripper-empty)"
+   ],
+   "extra": [
+    "(robot-gripping red-spray-bottle)"
+   ],
+   "item_tilt": 29.6,
+   "ok": false
+  },
+  {
+   "problem": "problem_00712",
+   "action": "(put-in-basket red-spray-bottle)",
+   "server_ok": false,
+   "message": "to top-down: held object hits an unrecognised or unseen object",
+   "seconds": 3.8,
+   "effect_ok": false,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [
+    "(in-basket red-spray-bottle)",
+    "(robot-gripper-empty)"
+   ],
+   "extra": [
+    "(robot-gripping red-spray-bottle)"
+   ],
+   "item_tilt": 29.6,
+   "ok": false
+  },
+  {
+   "problem": "problem_00712",
+   "action": "(put-in-basket red-spray-bottle)",
+   "server_ok": false,
+   "message": "to top-down: held object hits an unrecognised or unseen object",
+   "seconds": 6.1,
+   "effect_ok": false,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [
+    "(in-basket red-spray-bottle)",
+    "(robot-gripper-empty)"
+   ],
+   "extra": [
+    "(robot-gripping red-spray-bottle)"
+   ],
+   "item_tilt": 29.6,
+   "ok": false
+  },
+  {
+   "problem": "problem_00712",
+   "action": "(put-in-basket red-spray-bottle)",
+   "server_ok": false,
+   "message": "to top-down: held object hits an unrecognised or unseen object",
+   "seconds": 3.7,
+   "effect_ok": false,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [
+    "(in-basket red-spray-bottle)",
+    "(robot-gripper-empty)"
+   ],
+   "extra": [
+    "(robot-gripping red-spray-bottle)"
+   ],
+   "item_tilt": 29.6,
+   "ok": false
+  },
+  {
+   "problem": "problem_00712",
+   "action": "(put-in-basket red-spray-bottle)",
+   "server_ok": false,
+   "message": "to top-down: held object hits an unrecognised or unseen object",
+   "seconds": 4.8,
+   "effect_ok": false,
+   "unchanged_ok": true,
+   "others": [],
+   "disturbed": [],
+   "missing": [
+    "(in-basket red-spray-bottle)",
+    "(robot-gripper-empty)"
+   ],
+   "extra": [
+    "(robot-gripping red-spray-bottle)"
+   ],
+   "item_tilt": 29.6,
+   "ok": false
+  }
+ ]
+}
