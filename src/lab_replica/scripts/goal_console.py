@@ -23,6 +23,10 @@ session only:
                                      problem, usable in goals
     forget-item: purple-block        remove it again
 
+A window shows the wrist camera live (colour and depth side by side) and
+every view the robot takes, annotated (viewer.py), as in the action
+console; --no-window leaves it out.
+
 Ctrl-C during an action stops the arm; Ctrl-C or Ctrl-D at the prompt quits.
 """
 
@@ -106,6 +110,8 @@ def main():
     ap = common_arguments(argparse.ArgumentParser(description=__doc__,
                                                   formatter_class=argparse.RawDescriptionHelpFormatter))
     ap.add_argument("--step", action="store_true", help="wait for Enter before every action of a plan")
+    ap.add_argument("--no-window", action="store_true",
+                    help="do not open the camera window (live colour and depth, annotated observations)")
     args, _ = ap.parse_known_args()
     words = list(PREDICATES) + list(CONNECTIVES) + list(pddl.ITEMS) + ["state", "reset", "quit", NEW_ITEM,
                                                                        FORGET_ITEM]
@@ -116,7 +122,7 @@ def main():
     except planner.PlannerError as e:
         return f"{e}"
     robot = Robot(term, sim=args.sim, speed_scale=args.speed_scale, verbose=args.verbose,
-                  return_home=not args.no_home, save_frames=args.save_frames)
+                  return_home=not args.no_home, save_frames=args.save_frames, window=not args.no_window)
     state = task.most_permissive_init()      # every item on the table, gripper empty
     if robot.holding:
         term.say(term.colour("warning", False) + ": the gripper holds something, but the goal console starts "
@@ -129,7 +135,8 @@ def main():
     try:
         while True:
             hints(term, state, robot.added)
-            line = term.ask("goal> ")
+            with robot.idle():
+                line = term.ask("goal> ")
             if line is None or line.strip().lower() in ("quit", "exit", "q"):
                 if not warned and warn_holding_added(term, robot):
                     warned = True
@@ -173,8 +180,11 @@ def main():
                     unknown_item_hint(term, m.group(1))
                 continue
             term.say(f"goal: {to_text(formula)}")
-            plan = plan_for(term, state, formula, items)
+            robot.window_status(f"planning {to_text(formula)}")
+            with robot.idle():
+                plan = plan_for(term, state, formula, items)
             if not plan:
+                robot.window_status("no plan (see the console)")
                 continue
             term.say(f"plan ({actions(len(plan))}):")
             for k, a in enumerate(plan):
@@ -184,9 +194,12 @@ def main():
 
             def before(k, action):
                 if args.step:
-                    answer = term.ask(f"Enter performs action {k + 1}/{n} {action} (n + Enter stops) ")
+                    robot.window_status(f"waiting for Enter: action {k + 1}/{n} {action}")
+                    with robot.idle():
+                        answer = term.ask(f"Enter performs action {k + 1}/{n} {action} (n + Enter stops) ")
                     if answer is None or answer.strip().lower().startswith("n"):
                         term.say("stopped before the action")
+                        robot.window_status(f"stopped before action {k + 1}/{n} {action}")
                         return False
                 term.say(f"performing action {k + 1}/{n}: {action}")
                 return True
@@ -197,10 +210,12 @@ def main():
                 else:
                     failed.append(k)
                     term.say(term.colour("action failed", False) + f": {msg}")
+                    robot.window_status(f"goal not reached: action {k + 1}/{n} {action} failed")
 
             # The exercise's plan execution (exercise/task_planning/planning.py).
             state, failed_at = tp.execute_plan(state, list(plan), plan.states, robot.execute, before, after)
             if failed_at is None:
+                robot.window_status(f"goal reached ({actions(n)})")
                 term.say(term.colour("goal reached", True)
                          + f" ({actions(n)}; the state is what they should have produced)")
             elif failed:

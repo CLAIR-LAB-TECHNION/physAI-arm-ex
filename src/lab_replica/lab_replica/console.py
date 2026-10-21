@@ -338,6 +338,11 @@ class Robot:
                 t.join()
         return ctx()
 
+    def window_status(self, text):
+        """The camera window's status bar (when there is a window)."""
+        if self.viewer is not None:
+            self.viewer.status(text)
+
     def _step(self, text):
         sys.stdout.write(f"  {text} ... ")
         sys.stdout.flush()
@@ -351,8 +356,7 @@ class Robot:
             self.term.say(self.term.dim(text))
 
     def _phase(self, text):
-        if self.viewer is not None:
-            self.viewer.status(text if text.startswith(("done:", "failed:")) else f"{self.ex.action}: {text}")
+        self.window_status(text if text.startswith(("done:", "failed:")) else f"{self.ex.action}: {text}")
         if text.startswith(("done:", "failed:")):
             return
         if not self.verbose:

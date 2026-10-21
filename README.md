@@ -434,7 +434,8 @@ current phase), `--save-frames` (also save every camera image, for
 
 ### The camera window
 
-The action console opens a window (`lab_replica/viewer.py`) with:
+Both consoles, the action console and the [goal console](#the-goal-console), open a window
+(`lab_replica/viewer.py`) with:
 
 * **top:** the wrist camera live, colour and depth side by side (the depth's
   colours run from near, red, to a little beyond the table, blue; the bar
@@ -447,7 +448,8 @@ The action console opens a window (`lab_replica/viewer.py`) with:
   where they close (green), the grasp width and the force. A put adds its
   plan: the free spot on the table, or the drop spot in the basket. A new
   item shows its mask and the model measured from it;
-* **the status bar:** what the robot is doing now.
+* **the status bar:** what the robot is doing now (in the goal console
+  also: planning, the plan's outcome, waiting for Enter with `--step`).
 
 Keys in the window: `a` / `d` (or the arrow keys) go to earlier and later
 views, `l` back to the newest. The views are also saved in the run
@@ -626,8 +628,11 @@ the added ones too, on the table.
 **Commands at the prompt:** `state` (show the state), `reset`, `new-item:`,
 `forget-item:`, `quit` (or Ctrl-D).
 
+**The camera window** is the [same as in the action console](#the-camera-window):
+the camera live, and every view of every action of the plan, annotated.
+
 **Options:** `--step` (press Enter before every action of a plan; `n` stops),
-and the same options as the action console.
+and the same options as the action console (`--no-window` too).
 
 ## What the robot keeps clear of
 
