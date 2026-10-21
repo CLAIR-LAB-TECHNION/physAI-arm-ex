@@ -5,6 +5,10 @@ put actions show their plan drawn into the robot's survey view: for the
 basket, the rim and the pile heights seen in it and the drop spot; for the
 table, what the camera saw (and what it could not see) that the spot keeps
 clear of, and the chosen spot.
+
+Each drawing takes a `frame` (perception.rgbd.Frame) to draw on; with
+DepthLook(frame) instead it draws the same into the frame's depth image (the
+console's camera window shows both, viewer.py).
 """
 
 import math
@@ -118,6 +122,37 @@ class Zoomed:
         return (uv - (self.x0, self.y0)) * self.s, d
 
 
+class DepthLook:
+    """A frame whose `rgb` is its depth image in colours (viewer.depth_colors),
+    so the drawings here draw into the depth instead of the colour image."""
+
+    def __init__(self, frame):
+        from ..viewer import depth_colors
+        self.frame = frame
+        bgr, self.lo, self.hi = depth_colors(frame.depth)
+        self.rgb = bgr[:, :, ::-1].copy()
+        self.depth = frame.depth
+
+    def project(self, P):
+        return self.frame.project(P)
+
+
+def source_frame(view):
+    """The rgbd.Frame behind a frame, a DepthLook or a Zoomed view."""
+    while hasattr(view, "frame"):
+        view = view.frame
+    return view
+
+
+def item_color(item):
+    """A fixed bright BGR colour per item name."""
+    import zlib
+    rng = np.random.default_rng(zlib.crc32(item.encode()))
+    c = rng.integers(70, 256, 3)
+    c[rng.integers(0, 3)] = 255
+    return tuple(int(v) for v in c)
+
+
 def _dim(frame):
     vis = frame.rgb[:, :, ::-1].copy()
     return (0.75 * vis).astype(np.uint8)
@@ -208,3 +243,92 @@ def draw_table(frame, cell, items, basket, scene, region, footprint, target, sou
         label(vis, "put here", uv[0] + [60, -14], GREEN)
     banner(vis, title, "kept clear of: seen red, unseen purple, basket and robot orange")
     return vis
+
+
+# ---- every observation, the grasp ---------------------------------------------------------------
+
+
+def draw_perception(frame, scene, items, basket, table_z, title, sub=None):
+    """What the robot made of one view: per item found in it its SAM 3 mask,
+    its model where it is estimated (wire frame) and its name and score
+    (SAM 3 x plausibility); the basket's rim; the unknown obstacles (red)
+    and the space no view saw (purple), when the depth was mapped."""
+    src = source_frame(frame)
+    vis = frame.rgb[:, :, ::-1].copy()
+    for item, d in sorted(scene.detections.items()):
+        col = item_color(item)
+        if d.frame is src:
+            m = d.mask
+            vis[m] = (0.5 * vis[m] + 0.5 * np.array(col)).astype(np.uint8)
+            cnts, _ = cv2.findContours(m.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            cv2.drawContours(vis, cnts, -1, col, 2)
+    for o in getattr(scene, "obstacles", []) or []:
+        P = np.c_[o.polygon, np.full(len(o.polygon), o.z_top)]
+        polyline(vis, frame, P, (200, 60, 170) if o.unseen else RED, 2)
+    if scene.basket_xy is not None:
+        polyline(vis, frame, circle3d(scene.basket_xy, basket.r_top, table_z + basket.height), ORANGE, 2)
+    for item, d in sorted(scene.detections.items()):
+        p = d.estimate.placement
+        model = items.get(item)
+        if model is None:
+            continue
+        col = item_color(item)
+        top = model.poses[p.rest].top
+        prism(vis, frame, model.footprint_world(p.rest, p.x, p.y, p.yaw), p.z_support, p.z_support + top, col, 1)
+        uv = _px(frame, [[p.x, p.y, p.z_support + top]])
+        if uv is not None and 0 <= uv[0][0] < vis.shape[1] and 0 <= uv[0][1] < vis.shape[0]:
+            cv2.drawMarker(vis, tuple(map(int, uv[0])), WHITE, cv2.MARKER_CROSS, 14, 2)
+            label(vis, f"{item} {d.score:.2f}", uv[0] + [8, -8], col, scale=vis.shape[1] / 1500.0)
+    banner(vis, title, sub or "masks; wire frames: estimated items; orange: basket; obstacles: red seen, "
+                              "purple unseen")
+    return vis
+
+
+def gripper_boxes(gx, gy, psi, width):
+    """Footprints of the two RG6 pads (finger ends) at `width` apart; the
+    closing direction is psi + 90 deg (planning/skills.py finger_boxes)."""
+    from ..robot import rg6
+    d = np.array([math.cos(psi + math.pi / 2), math.sin(psi + math.pi / 2)])
+    t = np.array([-d[1], d[0]])
+    out = []
+    for side in (-1, 1):
+        c = np.array([gx, gy]) + side * d * (width / 2 + rg6.FINGER_THICKNESS / 2)
+        hw, hd = rg6.FINGER_HALF_WIDTH, rg6.FINGER_THICKNESS / 2
+        out.append(np.array([c + a * hd * d + b * hw * t for a, b in ((-1, -1), (1, -1), (1, 1), (-1, 1))]))
+    return out, d
+
+
+def draw_grasp(frame, model, placement, held, open_width, force, title):
+    """The planned grasp: the item's model where it is estimated, the pads
+    open (white) and where they close on it (green), and the closing
+    direction."""
+    from ..robot import rg6
+    p = placement
+    c, s = math.cos(p.yaw), math.sin(p.yaw)
+    ox, oy = held.offset_obj
+    gx, gy = p.x + c * ox - s * oy, p.y + s * ox + c * oy
+    psi = p.yaw - held.yaw_rel
+    z0 = p.z_support + held.tip_z
+    top = model.poses[p.rest].top
+    fp = model.footprint_world(p.rest, p.x, p.y, p.yaw)
+    pts = np.r_[np.c_[fp, np.full(len(fp), p.z_support)], [[gx, gy, z0 + 0.12]]]
+    frame = Zoomed(frame, pts, margin=0.6)
+    vis = _dim(frame)
+    prism(vis, frame, fp, p.z_support, p.z_support + top, item_color(p.item), 2)
+    opened, d = gripper_boxes(gx, gy, psi, open_width)
+    closed, _ = gripper_boxes(gx, gy, psi, held.width)
+    for b in opened:
+        prism(vis, frame, b, z0, z0 + rg6.PAD_LENGTH, WHITE, 1)
+    for b in closed:
+        prism(vis, frame, b, z0, z0 + rg6.PAD_LENGTH, GREEN, 2, fill=GREEN)
+    for side in (-1, 1):
+        a = np.array([gx, gy]) + side * d * (open_width / 2 + 0.012)
+        b = np.array([gx, gy]) + side * d * (held.width / 2 + 0.004)
+        arrow(vis, frame, [a[0], a[1], z0 + 0.025], [b[0], b[1], z0 + 0.025], GREEN, 2)
+    uv = _px(frame, [[gx, gy, z0 + rg6.PAD_LENGTH]])
+    if uv is not None:
+        label(vis, f"grasp across {held.width * 1000:.0f} mm, {force:.0f} N", uv[0] + [40, -30], GREEN)
+        label(vis, f"fingertips {held.tip_z * 1000:.0f} mm above the {p.support}", uv[0] + [40, 10], GREEN)
+    banner(vis, title, "white: fingers open on the way down; green: where they close")
+    return vis
+

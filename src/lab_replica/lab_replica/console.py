@@ -6,7 +6,7 @@ subscriptions, and SAM 3 is loaded once at start. The prompt appears only
 when the arm, the gripper and the camera answer and SAM 3 is loaded.
 
     scripts/action_console.py   one grounded action at a time
-    scripts/goal_console.py     a goal: Fast Downward plans, the actions run in turn
+    scripts/goal_console.py     a goal: UPF + Fast Downward plan, the actions run in turn
 
 Neither knows whether it drives the simulation or the real robot, except
 for the clock (--sim: simulation time).
@@ -142,7 +142,7 @@ class Robot:
     phases only, unless verbose)."""
 
     def __init__(self, term, sim=False, speed_scale=1.0, run_dir=None, verbose=False, return_home=True,
-                 save_frames=False):
+                 save_frames=False, window=False):
         import rclpy
         from rclpy.parameter import Parameter
         from rclpy.signals import SignalHandlerOptions
@@ -207,6 +207,63 @@ class Robot:
                              f"(run/2_camera.sh {'sim' if sim else 'real'})")
         self._done(f"{f.rgb.shape[1]} x {f.rgb.shape[0]}")
         self.ex.on_phase = self._phase
+        self.viewer = None
+        if window:
+            self._start_window()
+
+    # ---- the camera window (viewer.py) -----------------------------------------------------------
+
+    def _start_window(self):
+        step = self._step
+        step("opening the camera window")
+        if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
+            self._done("skipped: no display (ssh -X, or run on the lab PC's screen)")
+            return
+        from .viewer import Viewer
+        self.viewer = Viewer()
+        self._last_live = 0.0
+        self.ex.cam.on_image = self._live
+        self.ex.on_observation = self.viewer.observation
+        self._done("live colour and depth; every observation, annotated")
+
+    def _live(self, color_msg, depth_msg):
+        now = time.time()
+        if now - self._last_live < 0.1 or not self.viewer.alive():
+            return
+        self._last_live = now
+        from .perception.rgbd import decode_image
+        try:
+            self.viewer.live(decode_image(color_msg), decode_image(depth_msg))
+        except Exception as e:  # noqa: BLE001
+            self._log(f"camera window: {e}")
+
+    def idle(self):
+        """Context: keep the camera images coming (for the window) while the
+        console waits for input. Nothing else may spin the node meanwhile."""
+        import contextlib
+        import threading
+
+        if self.viewer is None:
+            return contextlib.nullcontext()
+        stop = threading.Event()
+
+        def spin():
+            while not stop.is_set() and self.rclpy.ok():
+                try:
+                    self.rclpy.spin_once(self.node, timeout_sec=0.05)
+                except Exception:  # noqa: BLE001
+                    return
+
+        @contextlib.contextmanager
+        def ctx():
+            t = threading.Thread(target=spin, daemon=True, name="idle-spin")
+            t.start()
+            try:
+                yield
+            finally:
+                stop.set()
+                t.join()
+        return ctx()
 
     def _step(self, text):
         sys.stdout.write(f"  {text} ... ")
@@ -221,6 +278,8 @@ class Robot:
             self.term.say(self.term.dim(text))
 
     def _phase(self, text):
+        if self.viewer is not None:
+            self.viewer.status(text if text.startswith(("done:", "failed:")) else f"{self.ex.action}: {text}")
         if text.startswith(("done:", "failed:")):
             return
         if not self.verbose:
@@ -252,6 +311,9 @@ class Robot:
             self.node.cancel_active()
         except Exception:  # noqa: BLE001
             pass
+        if self.viewer is not None:
+            self.ex.cam.on_image = None
+            self.viewer.close()
         self.rclpy.try_shutdown()
         self.log_file.close()
 

@@ -7,7 +7,8 @@ tell it what to do in one of two ways:
 
 * **one action at a time:** you type `(pick-up green-mug)` and the robot does it;
 * **a goal:** you type `(in-basket green-mug) (in-basket red-can)` and the
-  robot plans the actions itself (with Fast Downward) and does them one after
+  robot plans the actions itself (the Unified Planning Framework with Fast
+  Downward) and does them one after
   the other.
 
 Either way the robot works out the details itself. It looks with the wrist
@@ -38,6 +39,8 @@ earlier `lab-tamp` workspace; see [Reference](#reference)).
 
 ## Run it: four scripts
 
+Once, before the first run: `run/0_setup.sh` ([Build (once)](#build-once)).
+
 Open a terminal for each script and leave each one running. The first
 argument always says where to run: **`sim`** (the Gazebo simulation) or
 **`real`** (the robot in the lab).
@@ -57,7 +60,7 @@ argument always says where to run: **`sim`** (the Gazebo simulation) or
   and the real robot on the same `ROS_DOMAIN_ID` at the same time.
 * The scripts set up everything they need themselves (ROS 2, this workspace,
   the Python environment of SAM 3), so they work from any directory, e.g.
-  `~/Workspace/physAI-arm-ex/run/1_robot.sh sim`.
+  `~/physAI-arm-ex/run/1_robot.sh sim`.
 * `--help` after `run/3_actions.sh sim` or `run/4_goals.sh sim` lists the
   options.
 * How the scripts were tested (simulation, and the real-robot mode without
@@ -66,52 +69,55 @@ argument always says where to run: **`sim`** (the Gazebo simulation) or
 ## Build (once)
 
 On the lab PC this is done. On another computer that runs the consoles
-(Ubuntu 22.04 with ROS 2 Humble):
+(Ubuntu 22.04 with [ROS 2 Humble](https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html),
+`ros-humble-desktop`, and an NVIDIA GPU):
 
 ```console
-# ROS packages
-sudo apt install ros-humble-desktop ros-humble-ur ros-humble-ros-gz ros-humble-ign-ros2-control \
-                 ros-humble-joint-trajectory-controller ros-humble-position-controllers \
-                 ros-humble-realsense2-camera python3-pil python3-opencv python3-pip python3.10-venv
-
-# The code
-git clone https://github.com/guyazran/physAI-arm-ex.git ~/Workspace/physAI-arm-ex
-cd ~/Workspace/physAI-arm-ex
-
-# The Python environment with SAM 3 (it also sees the ROS packages)
-python3 -m venv --system-site-packages .venv
-echo "numpy<2" > .venv/constraints.txt          # ROS Humble is built against numpy 1
-.venv/bin/pip install -c .venv/constraints.txt torch torchvision --index-url https://download.pytorch.org/whl/cu128
-.venv/bin/pip install -c .venv/constraints.txt "transformers>=5" accelerate "pillow>=10"
-echo "HF_TOKEN=<your Hugging Face token>" > .env
-
-# Fast Downward (only for the goal console; about 2 minutes)
-git clone --depth 1 --branch release-24.06.1 https://github.com/aibasel/downward.git third_party/downward
-(cd third_party/downward && ./build.py release)
-touch third_party/COLCON_IGNORE                  # keep colcon from building it as a ROS package
-
-# The ROS workspace
-source /opt/ros/humble/setup.bash
-colcon build --symlink-install
+git clone https://github.com/guyazran/physAI-arm-ex.git
+cd physAI-arm-ex
+run/0_setup.sh
 ```
 
+Clone it into any directory, under any name: the code and the scripts find
+the workspace from their own location. The commands in this README run in
+the clone's top directory (the one with `run/` and `src/`). Moving it after
+the setup breaks `.venv` and the build (they hold absolute paths): delete
+`.venv/`, `build/`, `install/` and `log/` there and run `run/0_setup.sh` again.
+
+`run/0_setup.sh` does everything, and skips what is done already:
+
+1. installs the missing system packages (apt: the UR, Gazebo and RealSense
+   ROS packages, colcon, OpenCV, SciPy, ...; asks for `sudo` only then);
+2. makes the Python environment `.venv` and installs
+   [`requirements.txt`](requirements.txt) into it: torch and transformers
+   for SAM 3, the Unified Planning Framework with Fast Downward for the goal
+   console (about 5 GB, mostly torch);
+3. asks for your Hugging Face token (saved in `.env`) and downloads SAM 3;
+4. builds the ROS workspace (`colcon build --symlink-install`);
+5. checks that ROS, torch with the GPU and the planner work.
+
 * SAM 3 (`facebook/sam3`, 3.4 GB) is a gated model: accept its licence on
-  Hugging Face before the first run; it is downloaded then. It needs about
-  3 GB of GPU memory. Details: [section A.1](#a1-install-once-on-top-of-section-1),
-  [section T.1](#t1-install-once-on-top-of-sections-1-and-a1).
-* `.venv/`, `.env`, `third_party/`, `build/`, `install/`, `log/` and the
+  [Hugging Face](https://huggingface.co/facebook/sam3) and make a read token
+  (Settings, Access Tokens) before running the script. It needs about 3 GB
+  of GPU memory.
+* Options: `--no-apt` (only report missing system packages), `--no-model`
+  (download SAM 3 on first use instead), `--fresh-venv` (make `.venv` again).
+  The token can also come from `$HF_TOKEN`.
+* The `.venv` sees the ROS and Ubuntu Python packages
+  (`--system-site-packages`); numpy stays below 2, which ROS Humble needs.
+* `.venv/`, `.env`, `build/`, `install/`, `log/` and the
   outputs (`runs/`, `videos/`, logs) are git-ignored.
 * The `run/` scripts source ROS 2, `install/setup.bash` and the `.venv`
   themselves; nothing has to go into `~/.bashrc`.
-* **After pulling new code,** rebuild with `colcon build --symlink-install`
-  if files were added or renamed. Edits to the YAML files and the Python
+* **After pulling new code,** run `run/0_setup.sh` again (new packages,
+  added or renamed files). Edits to the YAML files and the Python
   code take effect without rebuilding (`--symlink-install`).
 * The other two computers (air and guest) need **no build**: see
   [the real robot](#run-it-on-the-real-robot).
 
 ## Run it in simulation
 
-In `~/Workspace/physAI-arm-ex`:
+In the clone's top directory:
 
 ```console
 run/1_robot.sh sim          # terminal 1: wait for "RG6 driver ready"
@@ -144,7 +150,7 @@ lab's allocation for this project):
 | **air** (`ssh air@10.10.34.14`) | 1. the UR driver | `ros-humble-ur` (apt) |
 | **air**, second terminal | 3. the RG6 gripper driver | this repository (no build) |
 | **guest** (`ssh guest@132.68.35.80`) | 2. the RealSense (plugged in there) | `ros-humble-realsense2-camera` (apt) |
-| **this PC** | the consoles (SAM 3 needs its GPU) | this repository, [built](#build-once) |
+| **this PC** | the consoles (SAM 3 needs its GPU) | this repository, set up with [`run/0_setup.sh`](#build-once) |
 
 **Before starting any of the drivers,** in every terminal on air and on
 guest (their login shells set up neither ROS nor the domain):
@@ -199,7 +205,7 @@ Ready when it prints `RealSense Node Is Up!`.
 The only driver that needs **this repository**. Once, on air:
 
 ```console
-git clone https://github.com/guyazran/physAI-arm-ex.git ~/Workspace/physAI-arm-ex
+git clone https://github.com/guyazran/physAI-arm-ex.git          # any directory
 ```
 
 Then, each time, in a second terminal on air:
@@ -207,7 +213,7 @@ Then, each time, in a second terminal on air:
 ```console
 ssh air@10.10.34.14
 source /opt/ros/humble/setup.bash && export ROS_DOMAIN_ID=131
-cd ~/Workspace/physAI-arm-ex && git pull          # same branch as this PC
+cd physAI-arm-ex && git pull          # the clone; same branch as this PC
 python3 src/lab_replica/scripts/rg6_driver.py --ros-args -p backend:=onrobot -p ip:=10.240.10.4 -p port:=41414 -p tool_index:=0 -r /joint_states:=/rg6/joint_states
 ```
 
@@ -248,7 +254,7 @@ python3 src/lab_replica/tools/calibrate_wrist_camera.py capture runs/calib_<date
 python3 src/lab_replica/tools/calibrate_wrist_camera.py solve runs/calib_<date>     # prints the new optical_xyz / optical_rpy
 ```
 
-**Each time** (in `~/Workspace/physAI-arm-ex`, with `ROS_DOMAIN_ID=131`):
+**Each time** (in the clone's top directory, with `ROS_DOMAIN_ID=131`):
 
 1. Start the UR driver and the RG6 driver on air and the camera on guest
    ([1](#1-the-ur-driver-on-air), [2](#2-the-realsense-on-guest),
@@ -331,10 +337,36 @@ The robot checks for itself whether the gripper holds something (the RG6's
 grip sensor). It assumes nothing else about the state: it looks before
 every action.
 
-**Options:** `--speed-scale S` (slower or faster motions), `--no-home`
+**Options:** `--no-window` (no [camera window](#the-camera-window)), `--speed-scale S` (slower or faster motions), `--no-home`
 (stay where the action ended), `--verbose` (print every step, not only the
 current phase), `--save-frames` (also save every camera image, for
 [debugging](#watching-it-and-when-something-goes-wrong)).
+
+### The camera window
+
+The action console opens a window (`lab_replica/viewer.py`) with:
+
+* **top:** the wrist camera live, colour and depth side by side (the depth's
+  colours run from near, red, to a little beyond the table, blue; the bar
+  in the corner gives the range in metres);
+* **bottom:** every view the robot takes during an action, annotated, again
+  colour and depth side by side. Survey and closer views show the SAM 3
+  masks, each item's model where it is estimated (wire frame) with its
+  name and score, the basket's rim and the obstacles (seen red, unseen
+  purple). A pick-up adds the planned grasp: the pads open (white) and
+  where they close (green), the grasp width and the force. A put adds its
+  plan: the free spot on the table, or the drop spot in the basket;
+* **the status bar:** what the robot is doing now.
+
+Keys in the window: `a` / `d` (or the arrow keys) go to earlier and later
+views, `l` back to the newest. The views are also saved in the run
+directory (colour and depth side by side). Closing the window does not stop
+the console.
+
+The window needs a display: on the lab PC's screen, or `ssh -X`. Without one
+the console says so and carries on. `--no-window` leaves it out. The window
+gets its images from the console itself, so the camera's images cross the
+network once (they barely fit on the real robot's network).
 
 ## The goal console
 
@@ -410,8 +442,8 @@ Facts can be combined with `and`, `or`, `not`, `imply`, `forall` and
 A misspelt name is reported with a suggestion (`invalid goal: ...`). A path
 to a `.pddl` problem file also works: its `(:goal ...)` is used.
 
-**What happens then.** The console plans the shortest sequence of actions
-from the current state (Fast Downward), prints it, and performs the actions
+**What happens then.** The console plans a sequence of actions from the
+current state (UPF with Fast Downward, [T.3](#t3-how-it-works)), prints it, and performs the actions
 one by one, as the action console would: `performing action 1/3: ...`,
 then `action success: ...` or `action failed: ...`. At the end it prints
 `goal reached`. If an action fails, it stops there and prints
@@ -490,18 +522,21 @@ then refuses motions that would pass there until it is set upright.
 
 ## Watching it, and when something goes wrong
 
-* **What the robot saw:**
-  `ros2 run rqt_image_view rqt_image_view /lab_skills/detections` shows
-  what SAM 3 found, and for a put, where the item goes.
+* **What the robot saw:** the action console's
+  [camera window](#the-camera-window), or
+  `ros2 run rqt_image_view rqt_image_view /lab_skills/detections` (also for
+  the goal console): what SAM 3 found in every view, the planned grasp, and
+  for a put, where the item goes.
 * **The run directory** (printed at `Ready.`, under `runs/`) holds, for
   every look:
   * `console.log`: every step of every action;
   * `*_depth_map.png`: the obstacle map above;
-  * `*.jpg`: the camera views with the recognised items, and the put plans;
+  * `*.jpg`: the annotated camera views (colour and depth side by side), the
+    grasps and the put plans;
   * `*_survey.yaml`: the perceived item positions;
   * `frame_*.npz`: the raw camera images, with `--save-frames`.
 * **Replaying saved frames** offline, without the robot. In
-  `~/Workspace/physAI-arm-ex`, with the frames of one action (e.g. its top view,
+  the clone's top directory, with the frames of one action (e.g. its top view,
   front view and closer look):
   ```console
   source /opt/ros/humble/setup.bash && source install/setup.bash && source .venv/bin/activate
@@ -546,7 +581,7 @@ measurement), then **lab-skills** (single PDDL actions executed autonomously
 with the wrist camera and SAM 3), then **lab-tamp** (goals planned with Fast
 Downward). All of it is still here. ROS 2 Humble, Ignition Gazebo Fortress,
 `ur_robot_driver`, PyTorch and Transformers (SAM 3) in a virtual environment,
-Fast Downward.
+the Unified Planning Framework with Fast Downward.
 
 | I want to ... | Go to |
 |---|---|
@@ -565,18 +600,12 @@ Fast Downward.
 
 ### T.1 Install (once, on top of sections 1 and A.1)
 
-Fast Downward, built in the workspace (git-ignored, about 2 minutes):
-
-```console
-cd ~/Workspace/physAI-arm-ex
-git clone --depth 1 --branch release-24.06.1 https://github.com/aibasel/downward.git third_party/downward
-(cd third_party/downward && ./build.py release)
-touch third_party/COLCON_IGNORE          # keep colcon from building it as a ROS package
-colcon build --symlink-install
-```
-
-Another Fast Downward can be used by setting `FAST_DOWNWARD` to its
-`fast-downward.py`.
+Nothing more: [`run/0_setup.sh`](#build-once) installs the
+[Unified Planning Framework](https://github.com/aiplan4eu/unified-planning)
+(UPF) and its Fast Downward engine into the `.venv` (the engine's wheel
+brings Fast Downward with it, nothing to build). `requirements.txt` pins
+ConfigSpace (a UPF dependency) below 1.0: newer releases need a newer scipy
+than Ubuntu 22.04's, which the `.venv` uses.
 
 ### T.2 Solve a goal
 
@@ -586,7 +615,7 @@ One command (with the workspace sourced and `source .venv/bin/activate`):
 ros2 run lab_replica solve.py "<goal>" [--scene <problem>] [--headless]
 ```
 
-It writes the task to `problems_tamp/<name>/`, plans with Fast Downward,
+It writes the task to `problems_tamp/<name>/`, plans (UPF with Fast Downward),
 starts the simulation (with the Gazebo window unless `--headless`) and the
 skill server, executes the plan action by action, checks the goal against the
 simulator's ground truth, writes `result.json` and shuts everything down
@@ -622,7 +651,7 @@ at most), and so is a goal that can never hold.
 More options: `--plan-only` (write the task and the plan, execute nothing),
 `--name NAME` (default `task_<date>_<time>`), `--step` (Enter before every
 action), `--domain ID` (ROS_DOMAIN_ID for everything started here),
-`--speed-scale S`, `--time-limit` (Fast Downward, default 60 s); see `--help`.
+`--speed-scale S`, `--time-limit` (the planner's, default 60 s); see `--help`.
 
 **Run a task again** (same scene, same goal; it is replanned):
 
@@ -645,8 +674,8 @@ A task directory (`problems_tamp/<name>/`):
 
 | File | |
 |---|---|
-| `problem.pddl`, `domain.pddl` | the PDDL problem given to the planner: the twelve items, the scene's initial state, the goal; the domain (always config/domain.pddl) |
-| `plan.txt`, `planner.log` | Fast Downward's plan and output |
+| `problem.pddl`, `domain.pddl` | the task as PDDL: the twelve items, the scene's initial state, the goal; the domain (always config/domain.pddl) |
+| `plan.txt`, `planner.log` | the plan and the planner's output |
 | `world.sdf`, `layout.yaml`, `layout.png`, `render.png` | the scene: the Gazebo world, where every item stands (and the init, goal, plan), a top view, the lab camera's view |
 | `README.md` | the task, the plan, the commands, where to put the items on the real table |
 | `result.json` | the last execution: every action with the skill server's answer and duration, the true state afterwards and whether the goal holds |
@@ -659,21 +688,25 @@ same layout.
 
 ```
  goal (text or .pddl) ──► check against domain + items ─┐
- scene (generated / existing) ──► initial state ────────┴──► problem.pddl ──► Fast Downward ──► plan
+ scene (generated / existing) ──► initial state ────────┴──► UPF problem ──► Fast Downward ──► plan
                                                                                                  │
  for each action: /lab_skills/execute ──► skill server: look, recognise, plan motion, act ◄──────┘
                                          (section A; stops at the first failed action)
  afterwards (simulation): the true state from Gazebo ──► does the goal hold?
 ```
 
-* **Task planning** (`lab_replica/tamp/fast_downward.py`): optimal A* with
-  LM-cut. A goal with a disjunction or a quantifier makes the translator
-  introduce axioms, which LM-cut does not support; the search is then
-  repeated with blind A* (still optimal; this domain has a few ten thousand
-  states, so either takes well under a second).
+* **Task planning** (`lab_replica/tamp/planner.py`): the domain is read
+  from `config/domain.pddl` with UPF's `PDDLReader`; each problem is built
+  in UPF from it (the twelve items as objects, the initial state, the goal
+  formula as a UPF expression) and solved with
+  `OneshotPlanner(name="fast-downward")`. That is Fast Downward's LAMA
+  (first iteration): satisficing, so a plan is not guaranteed to be the
+  shortest, though in this small domain it usually is. UPF compiles
+  disjunctions and quantifiers in the goal away; a plan takes well under a
+  second.
 * **Scenes** (`lab_replica/tamp/task.py`): a generated scene uses the problem
   generator's layout sampler (section 5) with one addition: an initial state
-  is only accepted if Fast Downward can reach the goal from it, checked
+  is only accepted if the planner can reach the goal from it, checked
   before the expensive steps (graspability, settling in Gazebo).
 * **Execution** (`lab_replica/tamp/execute.py`): the actions go one by one to
   the skill server of section A, which knows nothing of the plan or the
@@ -764,22 +797,11 @@ running at 1/4 of real time (a 14 s motion at 0.3 x real time timed out).
 
 ### A.1 Install (once, on top of section 1)
 
-The perception runs in a Python virtual environment that also sees the ROS
-packages:
-
-```console
-sudo apt install python3-pip python3.10-venv
-cd ~/Workspace/physAI-arm-ex
-python3 -m venv --system-site-packages .venv
-echo "numpy<2" > .venv/constraints.txt          # ROS Humble is built against numpy 1
-.venv/bin/pip install -c .venv/constraints.txt torch torchvision --index-url https://download.pytorch.org/whl/cu128
-.venv/bin/pip install -c .venv/constraints.txt "transformers>=5" accelerate "pillow>=10"
-colcon build --symlink-install
-```
-
-SAM 3 (`facebook/sam3`, 3.4 GB) is a gated model: accept its licence on
-Hugging Face and put `HF_TOKEN=<token>` in `~/Workspace/physAI-arm-ex/.env`
-(git-ignored). It is downloaded on first use. It needs about 3 GB of GPU memory.
+Nothing more: [`run/0_setup.sh`](#build-once) makes the Python environment
+(`.venv`, with `--system-site-packages` so that it also sees the ROS
+packages; [`requirements.txt`](requirements.txt)), takes the Hugging Face
+token (`.env`, git-ignored) and downloads SAM 3. Use the `.venv` for
+everything that perceives: `source .venv/bin/activate`.
 
 ### A.2 Execute actions in simulation
 
@@ -1042,15 +1064,13 @@ geometry; `videos/previous/`: the version before that. Recorded with
 ## 1. Install and build (once)
 
 ```console
-sudo apt install ros-humble-desktop ros-humble-ur ros-humble-ros-gz ros-humble-ign-ros2-control \
-                 ros-humble-joint-trajectory-controller ros-humble-position-controllers python3-pil python3-opencv
-cd ~/Workspace/physAI-arm-ex
-colcon build --symlink-install
-echo "source ~/Workspace/physAI-arm-ex/install/setup.bash" >> ~/.bashrc     # then open a new terminal
+cd physAI-arm-ex                     # the clone
+run/0_setup.sh                       # see Build (once) at the top
+source install/setup.bash            # in each terminal for the commands below
 ```
 
-Rebuild only when you add or rename files. Edits to the YAML files and the
-Python code take effect without rebuilding (`--symlink-install`).
+Run `run/0_setup.sh` again when you add or rename files. Edits to the YAML
+files and the Python code take effect without rebuilding (`--symlink-install`).
 
 Every terminal must use the same `ROS_DOMAIN_ID` (the lab PC sets 131 in
 `~/.bashrc`).
@@ -1192,7 +1212,6 @@ physAI-arm-ex/
     problem_006xx/         three more generated problems
   problems_gen/            generated problems (the old cell's, of the verification and the videos, are not in git)
   problems_tamp/           the tasks of solve.py: scene + goal + plan + result (section T.2)
-  third_party/downward/    Fast Downward (T.1, not in git)
   verification/            the verification reports (ground-truth check of every action)
   videos/                  ten videos of autonomous actions, each with its ground-truth check (.json) (not in git)
   runs/                    what the robot saw, one directory per console or skill server run: log,
@@ -1219,7 +1238,7 @@ physAI-arm-ex/
       autonomy/            executing PDDL actions on demand: executive.py, camera views,
                            depth_world.py (what the motions keep clear of), obstacles.py (the planner on it)
       console.py           the action and goal consoles (prompt, start-up checks, running an action)
-      tamp/                solving a goal: goal formulas, Fast Downward, tasks, plan execution (section T.3)
+      tamp/                solving a goal: goal formulas, UPF + Fast Downward, tasks, plan execution (section T.3)
       gazebo/              writing models and worlds, headless Gazebo runs
     launch/
       sim.launch.py        the simulated cell
@@ -1244,7 +1263,7 @@ physAI-arm-ex/
 | `run_solution.py <problem>` | runs the problem's hard-coded `solution.py` (simulation or real robot) |
 | `check_goal.py <problem>` | reads the simulated scene back as PDDL facts and checks the goal |
 | `replan_problem.py <problem>` | after a measurement change: rebuilds models, world, plan and `solution.py` |
-| `solve.py "<goal>"` | plans the goal with Fast Downward and executes the plan autonomously (section T) |
+| `solve.py "<goal>"` | plans the goal (UPF + Fast Downward) and executes the plan autonomously (section T) |
 | `generate_problem.py [--seed S]` | a new random problem in `problems/` |
 | `build_models.py` | rebuilds the Gazebo models from the YAML files |
 | `capture_camera.py out.png` | saves the simulated camera's view |

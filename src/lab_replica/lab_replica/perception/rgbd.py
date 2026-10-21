@@ -101,7 +101,8 @@ class RGBDCamera:
         t = dict(DEFAULT_TOPICS, **(topics or {}))
         self.color, self.depth, self.info = [], [], None
         self.max_skew = max_skew
-        node.create_subscription(Image, t["color"], lambda m: self._push(self.color, m), qos_profile_sensor_data)
+        self.on_image = None    # f(colour msg, newest depth msg) for each colour image (the console's window)
+        node.create_subscription(Image, t["color"], self._on_color, qos_profile_sensor_data)
         node.create_subscription(Image, t["depth"], lambda m: self._push(self.depth, m), qos_profile_sensor_data)
         node.create_subscription(CameraInfo, t["info"], self._on_info, qos_profile_sensor_data)
         self.chain = Chain(robot_urdf(ur_type), "world", OPTICAL_FRAME)
@@ -110,6 +111,11 @@ class RGBDCamera:
         """Keep the newest messages with their arrival time."""
         buf.append((msg, self.node.get_clock().now().nanoseconds * 1e-9))
         del buf[:-6]
+
+    def _on_color(self, msg):
+        self._push(self.color, msg)
+        if self.on_image is not None and self.depth:
+            self.on_image(msg, self.depth[-1][0])
 
     def _on_info(self, msg):
         self.info = msg

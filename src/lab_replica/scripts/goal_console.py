@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Type a goal; the robot plans the actions (Fast Downward) and performs them.
+"""Type a goal; the robot plans the actions (UPF + Fast Downward) and performs them.
 
     run/4_goals.sh sim|real                      (the usual way: sets up the environment)
     ros2 run lab_replica goal_console.py [--sim] [--speed-scale S] [--step]
@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..
 
 from lab_replica.console import PREDICATES, Robot, Terminal, banner, common_arguments, wrap_words  # noqa: E402
 from lab_replica.planning import pddl  # noqa: E402
-from lab_replica.tamp import fast_downward, task  # noqa: E402
+from lab_replica.tamp import planner, task  # noqa: E402
 from lab_replica.tamp.execute import effect  # noqa: E402
 from lab_replica.tamp.goal import CONNECTIVES, GoalError, holds, parse_goal, to_text  # noqa: E402
 
@@ -66,20 +66,20 @@ def actions(n):
 
 
 def plan_for(term, state, formula):
-    """Fast Downward's plan, or None (said why)."""
+    """The planner's plan, or None (said why)."""
     if holds(formula, state):
         term.say("the goal already holds: nothing to do")
         return None
     term.say("planning ...")
     try:
         return task.solve(state, formula, log=lambda s: None)
-    except fast_downward.Unsolvable:
+    except planner.Unsolvable:
         parts = formula[1:] if formula[0] == "and" else [formula]
         bad = [to_text(x) for x in parts if not task.reachable(state, x)]
         term.say(term.colour("the goal cannot be reached from this state", False)
                  + (f": {' '.join(bad)} can never hold" if bad else "")
                  + " (items in the basket never leave it; the gripper holds one item at most)")
-    except fast_downward.PlannerError as e:
+    except planner.PlannerError as e:
         term.say(term.colour("planner error", False) + f": {e}")
     return None
 
@@ -94,8 +94,8 @@ def main():
     term = Terminal(words, "goals")
     banner(term, "goal console", args.sim)
     try:
-        fast_downward.driver()
-    except fast_downward.PlannerError as e:
+        planner.check()
+    except planner.PlannerError as e:
         return f"{e}"
     robot = Robot(term, sim=args.sim, speed_scale=args.speed_scale, verbose=args.verbose,
                   return_home=not args.no_home, save_frames=args.save_frames)

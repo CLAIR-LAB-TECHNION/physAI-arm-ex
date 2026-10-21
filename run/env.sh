@@ -15,7 +15,7 @@ esac
 
 source /opt/ros/humble/setup.bash
 if [ ! -f "$WS/install/setup.bash" ]; then
-    echo "The workspace is not built yet:  cd $WS && colcon build --symlink-install"
+    echo "The workspace is not set up yet:  $WS/run/0_setup.sh"
     exit 1
 fi
 source "$WS/install/setup.bash"
@@ -23,7 +23,7 @@ echo "[$(basename "$0")] mode: $MODE, ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0} (all fou
 
 use_venv() {
     if [ ! -f "$WS/.venv/bin/activate" ]; then
-        echo "The Python environment for SAM 3 is missing: see README, section A.1 (install)"
+        echo "The Python environment (.venv) is missing:  $WS/run/0_setup.sh"
         exit 1
     fi
     source "$WS/.venv/bin/activate"

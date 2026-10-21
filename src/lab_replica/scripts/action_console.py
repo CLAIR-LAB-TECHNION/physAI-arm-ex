@@ -14,6 +14,9 @@ executed by the skills (README section A.3); the answer is
     action success: <what was done>
     action failed: <reason>          a refused action leaves the scene as it was
 
+A window shows the wrist camera live (colour and depth side by side) and
+every view the robot takes, annotated (viewer.py); --no-window leaves it out.
+
 Ctrl-C during an action stops the arm; Ctrl-C or Ctrl-D at the prompt quits.
 """
 
@@ -40,16 +43,19 @@ def main():
     sys.stdout.reconfigure(line_buffering=True)
     ap = common_arguments(argparse.ArgumentParser(description=__doc__,
                                                   formatter_class=argparse.RawDescriptionHelpFormatter))
+    ap.add_argument("--no-window", action="store_true",
+                    help="do not open the camera window (live colour and depth, annotated observations)")
     args, _ = ap.parse_known_args()
     term = Terminal(list(ACTIONS) + list(pddl.ITEMS), "actions")
     banner(term, "action console", args.sim)
     robot = Robot(term, sim=args.sim, speed_scale=args.speed_scale, verbose=args.verbose,
-                  return_home=not args.no_home, save_frames=args.save_frames)
+                  return_home=not args.no_home, save_frames=args.save_frames, window=not args.no_window)
     term.say(f"Ready. Log and camera views: {robot.run_dir}")
     try:
         while True:
             hints(term)
-            line = term.ask("action> ")
+            with robot.idle():
+                line = term.ask("action> ")
             if line is None or line.strip().lower() in ("quit", "exit", "q"):
                 break
             if not line.strip():

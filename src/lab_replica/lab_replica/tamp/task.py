@@ -5,7 +5,7 @@ A task directory (problems_tamp/<name>/) holds
 
     problem.pddl   the twelve items, the scene's initial state, the goal
     domain.pddl    config/domain.pddl (always the same)
-    plan.txt       Fast Downward's plan;  planner.log  its output
+    plan.txt       the plan (UPF + Fast Downward);  planner.log  its output
     layout.yaml    where every item stands (with the init, goal and plan)
     layout.png     top view of the layout;  render.png  the lab camera's view
     world.sdf      the Gazebo world of the scene (items at their settled poses)
@@ -20,7 +20,6 @@ initial state). A task directory is itself a scene for further goals.
 
 import os
 import shutil
-import tempfile
 import time
 
 import numpy as np
@@ -28,7 +27,7 @@ import yaml
 
 from .. import config
 from ..planning import pddl
-from . import fast_downward
+from . import planner
 from .goal import to_text
 
 TASKS_DIR = "problems_tamp"
@@ -62,29 +61,23 @@ def problem_text(init, formula, name):
 
 
 def solve(init, formula, out_dir=None, log=print, time_limit=60):
-    """Fast Downward's plan from `init` to the goal (raises fast_downward.Unsolvable)."""
-    tmp = None
-    if out_dir is None:
-        tmp = out_dir_ = tempfile.mkdtemp(prefix="lab_task_")
-    else:
-        out_dir_ = out_dir
-    try:
-        pf = os.path.join(out_dir_, "problem.pddl")
-        with open(pf, "w") as f:
-            f.write(problem_text(init, formula, os.path.basename(out_dir_.rstrip("/")) or "task"))
-        return fast_downward.plan(config.path("config", "domain.pddl"), pf,
-                                  out_dir=out_dir, log=log, time_limit=time_limit)
-    finally:
-        if tmp:
-            shutil.rmtree(tmp, ignore_errors=True)
+    """The plan from `init` to the goal: a UPF problem solved by Fast Downward
+    (planner.py; raises planner.Unsolvable). With out_dir, problem.pddl,
+    plan.txt and planner.log are written there."""
+    name = os.path.basename(out_dir.rstrip("/")) if out_dir else "task"
+    if out_dir:
+        with open(os.path.join(out_dir, "problem.pddl"), "w") as f:
+            f.write(problem_text(init, formula, name))
+    problem = planner.make_problem(init, formula, name=name.replace("-", "_") or "task")
+    return planner.plan(problem, out_dir=out_dir, time_limit=time_limit)
 
 
 def reachable(init, formula):
-    """Whether the goal can be reached from `init` at all (Fast Downward)."""
+    """Whether the goal can be reached from `init` at all (the planner)."""
     try:
         solve(init, formula, log=lambda s: None)
         return True
-    except fast_downward.Unsolvable:
+    except planner.Unsolvable:
         return False
 
 
@@ -187,7 +180,7 @@ scene {scene}.
 
 **Goal:** `{goal}`
 
-**Plan (Fast Downward, {n} actions):**
+**Plan (UPF + Fast Downward, {n} actions):**
 
 {plan}
 

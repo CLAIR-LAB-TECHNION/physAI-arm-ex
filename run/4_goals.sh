@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Step 4 of 4 (or 3): the goal console. Type a goal such as
 # (in-basket green-mug) (in-basket red-can); the robot plans the actions
-# with Fast Downward and performs them one after the other. It assumes that
+# (UPF with Fast Downward) and performs them one after the other. It assumes that
 # every item is on the table and the gripper is empty when it starts.
 #
 #   run/4_goals.sh sim

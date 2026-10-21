@@ -36,7 +36,7 @@ from std_msgs.msg import Bool, Float64, String
 
 from .. import config, objects
 from ..perception.rgbd import RGBDCamera
-from ..perception.scene import ScenePerception, draw, load_perception_config
+from ..perception.scene import ScenePerception, load_perception_config
 from ..planning.motion import PlanError
 from ..planning.placement import Placement
 from ..planning.skills import Held
@@ -102,6 +102,7 @@ class ActionExecutive:
         self.run_dir = run_dir
         self.save_frames = save_frames
         self.on_phase = None
+        self.on_observation = None   # f(colour BGR, depth BGR, title) for each annotated view
         self.action = ""
         self.home = np.array(self.cell["robot"]["home_joints"], float)
 
@@ -254,21 +255,21 @@ class ActionExecutive:
             self.log(f"    {'unseen space' if o.unseen else 'unknown obstacle'} at ({c[0]:.3f}, {c[1]:.3f}), "
                      f"{np.ptp(o.polygon[:, 0]) * 100:.0f} x {np.ptp(o.polygon[:, 1]) * 100:.0f} cm, "
                      f"{o.z_top * 100:.0f} cm high, on the {o.support}")
-        if target is not None:
-            # A pick-up shows what SAM 3 found; a put shows its plan instead.
-            views = self.cfg["survey_views"] + extra
-            for k, f in enumerate(frames):
-                self.publish_detections(f, scene, f"{views[k].get('name', 'survey')} view: SAM 3 + depth")
+        # Every view, annotated (a put then also shows its plan).
+        views = self.cfg["survey_views"] + extra
+        for k, f in enumerate(frames):
+            self.publish_detections(f, scene, f"{views[k].get('name', 'survey')} view: SAM 3 + depth")
         self.save_scene(scene, "survey")
         self.scene = scene
         return scene
 
     def close_look(self, scene, item, held=None):
         """Look at `item` from closer and update the estimates of the items
-        seen there (when they agree with the survey within 5 cm)."""
+        seen there (when they agree with the survey within 5 cm). Returns
+        the frame, or None without a closer look."""
         cl = self.cfg.get("close_look", {})
         if not cl.get("enabled", False):
-            return
+            return None
         p = scene.detections[item].estimate.placement
         # The camera is beside the gripper: turning the view about the
         # vertical moves the gripper around the item. Try first the turns that
@@ -291,7 +292,7 @@ class ActionExecutive:
                 continue
         else:
             self.log(f"  no close look at {item} possible; using the survey")
-            return
+            return None
         self.phase(f"recognising {item} from closer")
         sub = self.perception.observe([frame], [float(cl.get("weight", 1.2))], basket_xy=scene.basket_xy)
         for it, d in sub.detections.items():
@@ -305,6 +306,7 @@ class ActionExecutive:
                 scene.detections[it] = d
         self.map_depth(scene, scene.depth_frames + [frame], held)
         self.publish_detections(frame, scene, "closer look: SAM 3 + depth")
+        return frame
 
     def map_depth(self, scene, frames, held=None):
         """scene.depth: the obstacle model from these frames (depth_world.py)."""
@@ -322,21 +324,37 @@ class ActionExecutive:
             cv2.imwrite(os.path.join(self.run_dir, f"{time.strftime('%H%M%S')}_depth_map.png"), scene.depth.image())
 
     def publish_detections(self, frame, scene, title):
-        """The frame annotated with what SAM 3 found (masks, names, centres)."""
-        vis = draw(frame, scene.detections, scene.basket_xy)
-        self.publish_image(annotate.banner(vis, title), title)
+        """The frame annotated with what was found in it (masks, the items'
+        estimated models, names and scores, the basket, obstacles)."""
+        table_z = self.cell["table"]["surface_z"]
+        self.show(frame, lambda v: annotate.draw_perception(v, scene, self.items, self.basket, table_z, title), title)
 
-    def publish_image(self, vis, title):
-        """A BGR image on /lab_skills/detections (and into run_dir)."""
+    def show(self, frame, draw, title):
+        """An annotated observation: draw(view) -> BGR image, drawn on the
+        frame's colour image and on its depth (annotate.DepthLook)."""
+        from ..viewer import depth_legend
+        vis = draw(frame)
+        look = annotate.DepthLook(frame)
+        self.publish_image(vis, title, depth_legend(draw(look), look.lo, look.hi))
+
+    def publish_image(self, vis, title, depth_vis=None):
+        """A BGR image on /lab_skills/detections; into run_dir (beside its
+        depth twin) and to on_observation (the console's camera window)."""
         from sensor_msgs.msg import Image
         msg = Image(height=vis.shape[0], width=vis.shape[1], encoding="bgr8", step=vis.shape[1] * 3,
                     data=vis.tobytes())
         msg.header.stamp = self.node.get_clock().now().to_msg()
         self.det_pub.publish(msg)
+        if self.on_observation is not None:
+            try:
+                self.on_observation(vis, depth_vis, title)
+            except Exception as e:  # noqa: BLE001
+                self.log(f"  camera window: {e}")
         if self.run_dir:
             os.makedirs(self.run_dir, exist_ok=True)
             name = "".join(c if c.isalnum() or c in "-_" else "_" for c in title)
-            cv2.imwrite(os.path.join(self.run_dir, f"{time.strftime('%H%M%S')}_{name}.jpg"), vis)
+            both = vis if depth_vis is None or depth_vis.shape != vis.shape else np.hstack([vis, depth_vis])
+            cv2.imwrite(os.path.join(self.run_dir, f"{time.strftime('%H%M%S')}_{name}.jpg"), both)
 
     def best_frame(self, scene):
         """The scene's frame of the highest-weight view (the top view)."""
@@ -424,7 +442,7 @@ class ActionExecutive:
         scene = self.survey(target=item)
         if item not in scene.detections:
             raise ActionError(f"{item} not found")
-        self.close_look(scene, item)
+        close = self.close_look(scene, item)
         p = scene.detections[item].estimate.placement
         self.log(f"  {item}: {p.rest} on the {p.support} at ({p.x:.3f}, {p.y:.3f}), yaw "
                  f"{math.degrees(p.yaw):.0f} deg")
@@ -443,6 +461,10 @@ class ActionExecutive:
             home_steps, q_home = sk.plan_home(pre[-1], world)
             steps, q_end, held = sk.plan_pick(q_home, item, world, max_candidates=32)
             first += home_steps
+        open_w = next(s["width"] for s in steps if s.get("label") == "open")
+        self.show(close if close is not None else self.best_frame(scene),
+                  lambda v: annotate.draw_grasp(v, self.items[item], p, held, open_w, sk.force,
+                                                f"grasp {item}"), f"grasp {item}")
         self.phase(f"picking up {item}")
         try:
             self.run(first + steps)
@@ -508,9 +530,10 @@ class ActionExecutive:
         tgt, steps, q_end = sk.find_spot(q0, held, "table", world, region=region, prefer=tuple(prefer),
                                          max_tries=self.cfg.get("put_max_tries", 80))
         fp = self.items[held.item].footprint_world(held.rest, tgt.x, tgt.y, tgt.yaw)
-        self.publish_image(annotate.draw_table(self.best_frame(scene), self.cell, self.items, self.basket, scene,
-                                               region, fp, tgt, self.held.source, held.item,
-                                               f"put {held.item} here (free spot)"), "put on the table")
+        self.show(self.best_frame(scene),
+                  lambda v: annotate.draw_table(v, self.cell, self.items, self.basket, scene, region, fp, tgt,
+                                                self.held.source, held.item, f"put {held.item} here (free spot)"),
+                  "put on the table")
         return tgt, steps
 
     def _plan_drop(self, sk, q0, held, world, scene):
@@ -536,10 +559,11 @@ class ActionExecutive:
             pile = z_pile - drops.z_floor
             self.log(f"  dropping from {z_drop * 100:.0f} cm onto "
                      + ("the floor" if pile < 0.01 else f"a pile {pile * 100:.0f} cm high"))
-            self.publish_image(annotate.draw_drop(self.best_frame(scene), self.basket, scene.basket_xy,
-                                                  self.cell["table"]["surface_z"], drops, fpw, tgt, z_drop,
-                                                  held.item, f"drop {held.item}: emptiest spot"),
-                               "drop in the basket")
+            self.show(self.best_frame(scene),
+                      lambda v: annotate.draw_drop(v, self.basket, scene.basket_xy, self.cell["table"]["surface_z"],
+                                                   drops, fpw, tgt, z_drop, held.item,
+                                                   f"drop {held.item}: emptiest spot"),
+                      "drop in the basket")
             return tgt, steps
         raise err or PlanError("no drop spot in the basket")
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Solve a goal in the lab cell: Fast Downward plans, the autonomous skills execute.
+"""Solve a goal in the lab cell: UPF + Fast Downward plan, the autonomous skills execute.
 
     ros2 run lab_replica solve.py GOAL [scene] [options]
     ros2 run lab_replica solve.py --task NAME [options]        # run an existing task again
@@ -23,7 +23,7 @@ the scene:
 Then:
   1. the task is written to problems_tamp/<name>/ (problem.pddl, world.sdf,
      layout, README.md with the table set-up);
-  2. Fast Downward plans (plan.txt);
+  2. UPF with Fast Downward plans (plan.txt);
   3. unless --plan-only: the simulation (sim.launch.py with the scene) and the
      skill server (skill_server.py --sim) are started, every action of the
      plan is executed through /lab_skills/execute, and the goal is checked
@@ -47,7 +47,7 @@ sys.path.insert(0, os.path.join(HERE, ".."))
 
 from lab_replica import config  # noqa: E402
 from lab_replica.planning import pddl  # noqa: E402
-from lab_replica.tamp import fast_downward, task  # noqa: E402
+from lab_replica.tamp import planner, task  # noqa: E402
 from lab_replica.tamp.goal import GoalError, holds, parse_goal, to_text, unsatisfied_facts  # noqa: E402
 
 HELD_FILE = os.path.expanduser("~/.ros/lab_skills_held.json")
@@ -126,7 +126,7 @@ def make_task(args):
             print(f"scene (seed {seed}): {task.describe_init(init)}")
         try:
             plan = task.solve(init, formula, out_dir=d, time_limit=args.time_limit)
-        except fast_downward.Unsolvable:
+        except planner.Unsolvable:
             parts = formula[1:] if formula[0] == "and" else [formula]
             bad = [to_text(x) for x in parts if not task.reachable(init, x)]
             raise SystemExit("the goal cannot be reached from this scene's initial state"
@@ -156,7 +156,7 @@ def main():
     g.add_argument("--randomize-basket", action="store_true", help="random basket position on the board (cell.yaml basket.random_x/y)")
     g.add_argument("--no-render", action="store_true", help="skip render.png (the lab camera's view)")
     g = ap.add_argument_group("planning and execution")
-    g.add_argument("--time-limit", type=int, default=60, help="Fast Downward's time limit [s]")
+    g.add_argument("--time-limit", type=int, default=60, help="the planner's time limit [s]")
     g.add_argument("--plan-only", action="store_true", help="write the task and the plan, do not execute")
     g.add_argument("--attach", action="store_true",
                    help="use the running simulation or real robot and skill server instead of starting them")
@@ -174,7 +174,7 @@ def main():
         ap.error("--scene is for a new goal; a task keeps its scene")
 
     d, init, formula, plan = make_task(args)
-    print(f"plan ({len(plan)} actions, Fast Downward):")
+    print(f"plan ({len(plan)} actions, UPF + Fast Downward):")
     for k, a in enumerate(plan):
         print(f"  {k + 1}. {a}")
     if args.plan_only:
