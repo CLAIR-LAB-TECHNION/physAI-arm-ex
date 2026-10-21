@@ -1,7 +1,7 @@
 """The action console's camera window: the wrist RealSense live, colour and
 depth side by side, and below it every observation the skills make,
 annotated (autonomy/annotate.py: SAM 3 masks and the estimated items, the
-planned grasp, where an item is put or dropped).
+planned grasp, where an item is put or dropped, a new item's measurement).
 
 The window runs in a child process, so it keeps redrawing while the console
 waits for input or plans. The console sends it the images through queues:

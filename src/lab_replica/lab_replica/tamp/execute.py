@@ -70,8 +70,10 @@ class SkillClient:
 
 
 def effect(state, action):
-    """The PDDL state after `action`, or None if it is not applicable."""
-    for a, s in pddl.successors(state):
+    """The PDDL state after `action`, or None if it is not applicable. The
+    item may be any (also one added with new-item:)."""
+    item = action.strip().strip("()").split()[-1]
+    for a, s in pddl.successors(state, items=[item]):
         if a == action:
             return s
     return None

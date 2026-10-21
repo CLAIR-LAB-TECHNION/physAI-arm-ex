@@ -355,7 +355,8 @@ The action console opens a window (`lab_replica/viewer.py`) with:
   name and score, the basket's rim and the obstacles (seen red, unseen
   purple). A pick-up adds the planned grasp: the pads open (white) and
   where they close (green), the grasp width and the force. A put adds its
-  plan: the free spot on the table, or the drop spot in the basket;
+  plan: the free spot on the table, or the drop spot in the basket. A new
+  item shows its mask and the model measured from it;
 * **the status bar:** what the robot is doing now.
 
 Keys in the window: `a` / `d` (or the arrow keys) go to earlier and later
@@ -367,6 +368,57 @@ The window needs a display: on the lab PC's screen, or `ssh -X`. Without one
 the console says so and carries on. `--no-window` leaves it out. The window
 gets its images from the console itself, so the camera's images cross the
 network once (they barely fit on the real robot's network).
+
+### Add a new item
+
+Put the item on the table, where the survey view sees it and away from the
+other items, then type its name after `new-item:`:
+
+```console
+action> new-item: purple-block
+measuring new item purple-block: looking for 'purple block'
+item added: purple-block is a box 58 x 29 x 28 mm (length x width x height), SAM 3 score 0.96
+    note: top outline fills 0.99 of its rectangle: box
+action> (pick-up purple-block)
+```
+
+The robot looks from above, asks SAM 3 for the name with the dashes as
+spaces (`purple block`), looks at what it found from closer, and measures its
+width and height from the SAM 3 mask and the depth. The new item is a box,
+or a round item when the outline of its top is round. The planner grasps it
+like the other items, with the same 40 N (`gripper.grip_force` in
+`cell.yaml`): a box across its short side, or across its long side when the
+gripper opens wide enough; a round item from any side. The picture of what
+was measured is in the run directory (`..._new_item_<name>.jpg`).
+
+| Command | What it does |
+|---|---|
+| `new-item: NAME` | measure the item and add it; NAME is lowercase words joined by `-` |
+| `new-item: NAME prompt="small purple cube"` | look for it by another description (when SAM 3 does not find it by its name) |
+| `new-item: NAME shape=box` (or `round`) | do not guess the shape |
+| `forget-item: NAME` | remove an added item |
+
+The colon may be left out (`new-item purple-block`). The console's hints
+show the command, and an action with an unknown item suggests it.
+
+**An added item is temporary.** It lasts until the console quits and is not
+written anywhere: the next console starts with the twelve items again.
+`config/domain.pddl` and the problem files are unchanged. In the goal
+console an added item is also an object of the planning problem for the
+rest of the session ([The goal console](#the-goal-console)). Quitting while
+the gripper holds an added item asks first (quit again to leave it in the
+gripper); the next session then knows only that the gripper is not empty.
+
+The code: `lab_replica/objects/measured.py` (the model),
+`perception/estimate.py` `measure_item`, `autonomy/executive.py` `new_item`,
+`console.py` `parse_item_command` and `item_command`.
+
+Limits: the gripper must be empty; the item must stand on the table (not in
+the basket), be at most 141 mm wide and 30 cm tall. The fingertips stop
+8 mm above the table, so items lower than about 15 mm are not held well. In
+simulation (tested 2026-10-20 with a 60 x 30 x 28 mm box and a 45 x 40 mm
+cylinder spawned into Gazebo) the sizes came out 1-3 mm small; pick-up,
+put-in-basket and put-on-table worked for both.
 
 ## The goal console
 
@@ -419,7 +471,8 @@ the goal cannot be reached from this state: (on-table red-can) can never hold (i
 ```
 
 **Typing a goal.** A goal is one or more facts that must all hold at the
-end. A fact is one of these, with one of the twelve item names:
+end. A fact is one of these, with one of the twelve item names (or an
+[added item](#add-a-new-item)):
 
 | Fact | Means |
 |---|---|
@@ -439,7 +492,8 @@ Facts can be combined with `and`, `or`, `not`, `imply`, `forall` and
 (forall (?x - item) (in-basket ?x))                      every item in the basket
 ```
 
-A misspelt name is reported with a suggestion (`invalid goal: ...`). A path
+A misspelt name is reported with a suggestion (`invalid goal: ...`); for a
+name that may be a new item, the console also shows how to add it. A path
 to a `.pddl` problem file also works: its `(:goal ...)` is used.
 
 **What happens then.** The console plans a sequence of actions from the
@@ -463,8 +517,24 @@ action's effect. It does not look to check facts such as `in-basket`, so:
   goal such as `(on-table red-can)` after the can went into the basket is
   answered with `the goal cannot be reached from this state`.
 
-**Commands at the prompt:** `state` (show the state), `reset`, `quit` (or
-Ctrl-D).
+**New items.** `new-item: NAME` and `forget-item: NAME` work here as in the
+[action console](#add-a-new-item). An added item is then one of the items
+for the rest of the session: it is on the table in the state, goals may name
+it (also through `forall` and `exists`), and the planner gets it as one more
+object:
+
+```text
+goal> new-item: purple-block
+measuring new item purple-block: looking for 'purple block'
+item added: purple-block is a box 58 x 29 x 28 mm (length x width x height), SAM 3 score 0.96
+goal> (in-basket purple-block)
+```
+
+`forget-item:` removes it from the state again; `reset` puts every item,
+the added ones too, on the table.
+
+**Commands at the prompt:** `state` (show the state), `reset`, `new-item:`,
+`forget-item:`, `quit` (or Ctrl-D).
 
 **Options:** `--step` (press Enter before every action of a plan; `n` stops),
 and the same options as the action console.

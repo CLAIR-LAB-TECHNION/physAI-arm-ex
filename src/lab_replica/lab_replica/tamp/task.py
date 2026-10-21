@@ -56,35 +56,35 @@ def scene_dir(name_or_path):
     return d
 
 
-def problem_text(init, formula, name):
-    return pddl.problem_text(init, (), name=name, goal_formula=to_text(formula))
+def problem_text(init, formula, name, items=pddl.ITEMS):
+    return pddl.problem_text(init, (), items=items, name=name, goal_formula=to_text(formula))
 
 
-def solve(init, formula, out_dir=None, log=print, time_limit=60):
-    """The plan from `init` to the goal: a UPF problem solved by Fast Downward
-    (planner.py; raises planner.Unsolvable). With out_dir, problem.pddl,
-    plan.txt and planner.log are written there."""
+def solve(init, formula, out_dir=None, log=print, time_limit=60, items=pddl.ITEMS):
+    """The plan from `init` to the goal: a UPF problem over `items` solved by
+    Fast Downward (planner.py; raises planner.Unsolvable). With out_dir,
+    problem.pddl, plan.txt and planner.log are written there."""
     name = os.path.basename(out_dir.rstrip("/")) if out_dir else "task"
     if out_dir:
         with open(os.path.join(out_dir, "problem.pddl"), "w") as f:
-            f.write(problem_text(init, formula, name))
-    problem = planner.make_problem(init, formula, name=name.replace("-", "_") or "task")
+            f.write(problem_text(init, formula, name, items))
+    problem = planner.make_problem(init, formula, name=name.replace("-", "_") or "task", items=items)
     return planner.plan(problem, out_dir=out_dir, time_limit=time_limit)
 
 
-def reachable(init, formula):
+def reachable(init, formula, items=pddl.ITEMS):
     """Whether the goal can be reached from `init` at all (the planner)."""
     try:
-        solve(init, formula, log=lambda s: None)
+        solve(init, formula, log=lambda s: None, items=items)
         return True
     except planner.Unsolvable:
         return False
 
 
-def most_permissive_init():
+def most_permissive_init(items=pddl.ITEMS):
     """Every item on the table, gripper empty: every state of the domain is
     reachable from here (items never leave the basket)."""
-    return frozenset({("on-table", i) for i in pddl.ITEMS} | {pddl.EMPTY})
+    return frozenset({("on-table", i) for i in items} | {pddl.EMPTY})
 
 
 # ---- scenes --------------------------------------------------------------------------

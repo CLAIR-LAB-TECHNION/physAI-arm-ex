@@ -62,13 +62,20 @@ class ScenePerception:
         self.sam = sam
         self.prompt_item = {}
         for item, ps in self.cfg["prompts"].items():
-            for p in ps:
-                self.prompt_item[p] = item
+            self.add_prompts(item, ps)
+
+    def add_prompts(self, item, prompts):
+        """Look for `item` (already in self.items) by these text prompts too."""
+        for p in prompts:
+            self.prompt_item[p] = item
+
+    def remove_prompts(self, item):
+        self.prompt_item = {p: it for p, it in self.prompt_item.items() if it != item}
 
     # ---- one frame ------------------------------------------------------------------
 
-    def _points(self, frame, mask):
-        k = int(self.cfg["sam3"]["mask_erode_px"])
+    def _points(self, frame, mask, erode_px=None):
+        k = int(self.cfg["sam3"]["mask_erode_px"]) if erode_px is None else erode_px
         if k > 0:
             mask = cv2.erode(mask.astype(np.uint8), np.ones((2 * k + 1, 2 * k + 1), np.uint8)) > 0
         P = frame.points_world(mask)

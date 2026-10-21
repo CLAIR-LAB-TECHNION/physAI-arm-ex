@@ -14,6 +14,8 @@ for the clock (--sim: simulation time).
 
 import difflib
 import os
+import re
+import shlex
 import sys
 import time
 
@@ -27,8 +29,9 @@ class InvalidAction(ValueError):
     pass
 
 
-def parse_action(text):
+def parse_action(text, extra_items=()):
     """'(pick-up green-mug)' (parentheses and case optional) -> '(pick-up green-mug)'.
+    extra_items: items added in this session (new-item:) besides the PDDL ones.
     Raises InvalidAction with the reason."""
     words = text.strip().lower().replace("(", " ").replace(")", " ").split()
     if len(words) != 2:
@@ -37,10 +40,71 @@ def parse_action(text):
     if name not in ACTIONS:
         close = difflib.get_close_matches(name, ACTIONS, n=1, cutoff=0.5)
         raise InvalidAction(f"unknown action {name!r}" + (f" (did you mean {close[0]}?)" if close else ""))
-    if item not in pddl.ITEMS:
-        close = difflib.get_close_matches(item, pddl.ITEMS, n=1, cutoff=0.4)
+    items = list(pddl.ITEMS) + list(extra_items)
+    if item not in items:
+        close = difflib.get_close_matches(item, items, n=1, cutoff=0.4)
         raise InvalidAction(f"unknown item {item!r}" + (f" (did you mean {close[0]}?)" if close else ""))
     return f"({name} {item})"
+
+
+# ---- items added for one session (new-item:) ---------------------------------------------------
+
+NEW_ITEM, FORGET_ITEM = "new-item:", "forget-item:"
+ITEM_SHAPES = ("box", "round")
+NAME_RE = re.compile(r"^[a-z]+(-[a-z]+)*$")   # what planning/pddl.py parses
+# Not item names: goal connectives (tamp/goal.py) and PDDL words.
+RESERVED = ("and", "or", "not", "imply", "forall", "exists", "item", "object", "either", "define", "domain",
+            "problem")
+
+
+def parse_item_command(text, added=()):
+    """'new-item: purple-block [prompt="small purple cube"] [shape=box|round]'
+    -> ("new-item", name, {"prompt": ..., "shape": ...}); 'forget-item:
+    purple-block' -> ("forget-item", name, {}); None for any other line.
+    `added`: the items added so far in this session. Raises InvalidAction
+    with the reason."""
+    t = text.strip()
+    # The colon may be left out: "new-item purple-block".
+    cmd = next((c for c in (NEW_ITEM, FORGET_ITEM) if t.lower().startswith(c[:-1])
+                and t[len(c) - 1:len(c)] in (":", " ", "")), None)
+    if cmd is None:
+        return None
+    try:
+        words = shlex.split(t[len(cmd) - 1:].lstrip(":"))
+    except ValueError as e:
+        raise InvalidAction(str(e))
+    if not words:
+        raise InvalidAction(f"give the item's name, e.g. {cmd} purple-block")
+    name, opts = words[0].lower(), {}
+    if cmd == FORGET_ITEM:
+        if len(words) > 1:
+            raise InvalidAction(f"{cmd} takes only the item's name")
+        if name not in added:
+            raise InvalidAction(f"{name!r} was not added with {NEW_ITEM}"
+                                + (f"; the added items are {', '.join(sorted(added))}" if added else ""))
+        return cmd[:-1], name, opts
+    if not NAME_RE.match(name):
+        raise InvalidAction(f"{name!r}: a name is lowercase words joined by '-', e.g. purple-block")
+    if name in pddl.ITEMS or name in added:
+        raise InvalidAction(f"{name} is already an item" +
+                            (f" ({FORGET_ITEM} {name} first to measure it again)" if name in added else ""))
+    if name in ACTIONS or name in PREDICATES or name in RESERVED:
+        raise InvalidAction(f"{name} is a word of PDDL or of the domain")
+    for w in words[1:]:
+        key, eq, val = w.partition("=")
+        key = key.lower()
+        if not eq or key not in ("prompt", "shape"):
+            raise InvalidAction(f"unknown option {w!r} (options: prompt=\"...\", shape=box|round)")
+        if key == "prompt":
+            if not val.strip():
+                raise InvalidAction("prompt is empty")
+            opts["prompt"] = val.strip()
+        else:
+            if val.lower() not in ITEM_SHAPES:
+                raise InvalidAction(f"shape is {' or '.join(ITEM_SHAPES)}")
+            opts["shape"] = val.lower()
+    opts.setdefault("prompt", name.replace("-", " "))
+    return cmd[:-1], name, opts
 
 
 # ---- terminal ------------------------------------------------------------------------------
@@ -75,6 +139,14 @@ class Terminal:
             readline.write_history_file(self.history)
         except OSError:
             pass
+
+    def add_words(self, words):
+        if hasattr(self, "words"):
+            self.words = sorted(set(self.words) | set(words))
+
+    def remove_word(self, word):
+        if hasattr(self, "words"):
+            self.words = [w for w in self.words if w != word]
 
     def _complete(self, text, state):
         hits = [w for w in self.words if w.startswith(text.lower())]
@@ -207,6 +279,7 @@ class Robot:
                              f"(run/2_camera.sh {'sim' if sim else 'real'})")
         self._done(f"{f.rgb.shape[1]} x {f.rgb.shape[0]}")
         self.ex.on_phase = self._phase
+        self.added = []   # items added in this session (new-item:)
         self.viewer = None
         if window:
             self._start_window()
@@ -295,16 +368,43 @@ class Robot:
     def execute(self, action):
         """Run one action. Returns (success, message). Ctrl-C stops the arm
         and fails the action."""
+        return self._guarded(lambda: self.ex.execute(action))
+
+    def _guarded(self, run):
+        """run() -> (success, message, ...), with Ctrl-C stopping the arm."""
         try:
-            ok, msg = self.ex.execute(action)
+            out = run()
         except KeyboardInterrupt:
             n = self.node.cancel_active()
-            ok, msg = False, "interrupted (Ctrl-C)" + ("; the arm was stopped" if n else "")
+            out = (False, "interrupted (Ctrl-C)" + ("; the arm was stopped" if n else ""))
         except Exception as e:  # noqa: BLE001
-            ok, msg = False, f"{type(e).__name__}: {e}"
-        self._log(f"   {'OK' if ok else 'FAILED'}: {msg}")
+            out = (False, f"{type(e).__name__}: {e}")
+        self._log(f"   {'OK' if out[0] else 'FAILED'}: {out[1]}")
         self.term.end_status()
-        return ok, msg
+        return out
+
+    # ---- items added for this session (new-item:) ------------------------------------------
+
+    def new_item(self, name, opts):
+        """Measure an item with the camera and add it for this session only:
+        it is not added to the PDDL items, nor kept for the next session.
+        Returns (success, message)."""
+        out = self._guarded(lambda: self.ex.new_item(name, opts["prompt"], opts.get("shape")))
+        if out[0]:
+            self.added.append(name)
+        return out[:2]
+
+    def forget_item(self, name):
+        if self.holding_added() == name:
+            return False, f"the gripper holds {name}: put it down first"
+        self.ex.forget_item(name)
+        self.added.remove(name)
+        return True, f"{name} is no longer an item"
+
+    def holding_added(self):
+        """The added item the gripper holds (as far as the skills know), or None."""
+        held = self.ex.held
+        return held.item if held is not None and held.item in self.added else None
 
     def shutdown(self):
         try:
@@ -316,6 +416,52 @@ class Robot:
             self.viewer.close()
         self.rclpy.try_shutdown()
         self.log_file.close()
+
+
+# ---- new-item: / forget-item: in a console -------------------------------------------------
+
+def item_hints(term, added):
+    """The lines of the hints that tell how to add an item."""
+    term.say(term.bold("New item:") + f" put it on the table, then e.g.  {NEW_ITEM} purple-block  "
+             "(the camera finds and measures it)")
+    term.say(" " * 10 + term.dim(f'options: prompt="..." shape=box|round   {FORGET_ITEM} <name>   '
+                                 "added items" + (" (*)" if added else "") + " last until you quit"))
+
+
+def item_command(term, robot, cmd, name, opts):
+    """Run a new-item: / forget-item: command (parse_item_command). Returns
+    whether it succeeded."""
+    if cmd == "forget-item":
+        ok, msg = robot.forget_item(name)
+        if ok:
+            term.remove_word(name)
+        term.say(term.colour("item forgotten", True) + f": {msg}" if ok else
+                 term.colour("item not forgotten", False) + f": {msg}")
+        return ok
+    term.say(f"measuring new item {name}: looking for {opts['prompt']!r}")
+    ok, msg = robot.new_item(name, opts)
+    if ok:
+        term.add_words([name])
+    term.say(term.colour("item added", True) + f": {msg}" if ok else
+             term.colour("item not added", False) + f": {msg}")
+    return ok
+
+
+def unknown_item_hint(term, item):
+    """After 'unknown item': how to add it, if it may be a new item (not a typo)."""
+    if NAME_RE.match(item) and item not in RESERVED:
+        term.say(term.dim(f"  if {item} is a new item: put it on the table and type  {NEW_ITEM} {item}"))
+
+
+def warn_holding_added(term, robot):
+    """On quitting: whether the gripper holds an added item, which is
+    forgotten when the console quits (a later session could not put it
+    down); if so, says so."""
+    held = robot.holding_added()
+    if held is not None:
+        term.say(term.colour("the gripper holds " + held, False) + ", which is forgotten when the console "
+                 "quits; put it down first, or quit again to leave it in the gripper")
+    return held is not None
 
 
 def common_arguments(ap):
@@ -331,4 +477,6 @@ def common_arguments(ap):
 
 
 def banner(term, title, sim):
-    term.say(term.bold(f"lab-tamp: {title}") + f"  ({'simulation' if sim else 'REAL ROBOT'})")
+    from . import config
+    ws = os.path.basename(config.workspace_root())
+    term.say(term.bold(f"{ws}: {title}") + f"  ({'simulation' if sim else 'REAL ROBOT'})")

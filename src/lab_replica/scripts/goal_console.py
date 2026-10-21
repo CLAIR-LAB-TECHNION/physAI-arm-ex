@@ -14,41 +14,57 @@ perceives facts such as in-basket); `reset` sets it back to the start. A
 goal is planned from that state, and the plan's actions are performed one by
 one as in the action console, stopping at the first that fails.
 
+New items, as in the action console (README "Add a new item"), for this
+session only:
+
+    new-item: purple-block           the robot finds "purple block" on the table,
+                                     measures it and adds it to the items: on the
+                                     table in the state, an object of the planning
+                                     problem, usable in goals
+    forget-item: purple-block        remove it again
+
 Ctrl-C during an action stops the arm; Ctrl-C or Ctrl-D at the prompt quits.
 """
 
 import argparse
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), ".."))
 
-from lab_replica.console import PREDICATES, Robot, Terminal, banner, common_arguments, wrap_words  # noqa: E402
+from lab_replica.console import (FORGET_ITEM, NEW_ITEM, PREDICATES, InvalidAction, Robot, Terminal,  # noqa: E402
+                                 banner, common_arguments, item_command, item_hints, parse_item_command,
+                                 unknown_item_hint, warn_holding_added, wrap_words)
 from lab_replica.planning import pddl  # noqa: E402
 from lab_replica.tamp import planner, task  # noqa: E402
 from lab_replica.tamp.execute import effect  # noqa: E402
 from lab_replica.tamp.goal import CONNECTIVES, GoalError, holds, parse_goal, to_text  # noqa: E402
 
-START = task.most_permissive_init()      # every item on the table, gripper empty
 
 
-def describe(state):
-    table = [i for i in pddl.ITEMS if ("on-table", i) in state]
-    basket = [i for i in pddl.ITEMS if ("in-basket", i) in state]
+def all_items(robot):
+    """The twelve items and those added in this session (new-item:)."""
+    return list(pddl.ITEMS) + list(robot.added)
+
+
+def describe(state, items):
+    table = [i for i in items if ("on-table", i) in state]
+    basket = [i for i in items if ("in-basket", i) in state]
     held = pddl.held(state)
     return table, basket, held
 
 
-def show_state(term, state):
-    table, basket, held = describe(state)
+def show_state(term, state, items):
+    table, basket, held = describe(state, items)
     term.say(term.bold("State:   ") + "on the table: " + (wrap_words(table, 23) if table else "nothing"))
     term.say("         in the basket: " + (", ".join(basket) if basket else "nothing"))
     term.say("         gripper: " + (f"holding {held}" if held else "empty"))
 
 
-def hints(term, state):
+def hints(term, state, added):
     term.say()
-    show_state(term, state)
+    show_state(term, state, list(pddl.ITEMS) + list(added))
     term.say(term.bold("Goal:    ") + "facts that must all hold at the end, for example")
     term.say("           (in-basket green-mug)")
     term.say("           (in-basket red-can) (robot-gripping green-mug)")
@@ -56,7 +72,8 @@ def hints(term, state):
     facts = [f"({p})" if p == "robot-gripper-empty" else f"({p} <item>)" for p in PREDICATES]
     term.say(term.bold("Facts:   ") + "  ".join(facts))
     term.say("         combined with " + ", ".join(CONNECTIVES) + "  (e.g. (not (on-table red-can)))")
-    term.say(term.bold("Items:   ") + wrap_words(pddl.ITEMS, 9))
+    term.say(term.bold("Items:   ") + wrap_words(pddl.ITEMS + [i + "*" for i in added], 9))
+    item_hints(term, added)
     term.say(term.dim("Commands: state (show the state), reset (all items on the table, gripper empty), quit. "
                       "Tab completes names."))
 
@@ -65,17 +82,17 @@ def actions(n):
     return f"{n} action" + ("" if n == 1 else "s")
 
 
-def plan_for(term, state, formula):
-    """The planner's plan, or None (said why)."""
-    if holds(formula, state):
+def plan_for(term, state, formula, items):
+    """The planner's plan over `items`, or None (said why)."""
+    if holds(formula, state, items=items):
         term.say("the goal already holds: nothing to do")
         return None
     term.say("planning ...")
     try:
-        return task.solve(state, formula, log=lambda s: None)
+        return task.solve(state, formula, log=lambda s: None, items=items)
     except planner.Unsolvable:
         parts = formula[1:] if formula[0] == "and" else [formula]
-        bad = [to_text(x) for x in parts if not task.reachable(state, x)]
+        bad = [to_text(x) for x in parts if not task.reachable(state, x, items=items)]
         term.say(term.colour("the goal cannot be reached from this state", False)
                  + (f": {' '.join(bad)} can never hold" if bad else "")
                  + " (items in the basket never leave it; the gripper holds one item at most)")
@@ -90,7 +107,8 @@ def main():
                                                   formatter_class=argparse.RawDescriptionHelpFormatter))
     ap.add_argument("--step", action="store_true", help="wait for Enter before every action of a plan")
     args, _ = ap.parse_known_args()
-    words = list(PREDICATES) + list(CONNECTIVES) + list(pddl.ITEMS) + ["state", "reset", "quit"]
+    words = list(PREDICATES) + list(CONNECTIVES) + list(pddl.ITEMS) + ["state", "reset", "quit", NEW_ITEM,
+                                                                       FORGET_ITEM]
     term = Terminal(words, "goals")
     banner(term, "goal console", args.sim)
     try:
@@ -99,7 +117,7 @@ def main():
         return f"{e}"
     robot = Robot(term, sim=args.sim, speed_scale=args.speed_scale, verbose=args.verbose,
                   return_home=not args.no_home, save_frames=args.save_frames)
-    state = START
+    state = task.most_permissive_init()      # every item on the table, gripper empty
     if robot.holding:
         term.say(term.colour("warning", False) + ": the gripper holds something, but the goal console starts "
                  "from every item on the table and the gripper empty. Take the item out of the gripper "
@@ -107,32 +125,55 @@ def main():
     else:
         robot.ex.set_held(None)
     term.say(f"Ready. Log and camera views: {robot.run_dir}")
+    warned = False
     try:
         while True:
-            hints(term, state)
+            hints(term, state, robot.added)
             line = term.ask("goal> ")
             if line is None or line.strip().lower() in ("quit", "exit", "q"):
+                if not warned and warn_holding_added(term, robot):
+                    warned = True
+                    continue
                 break
             cmd = line.strip().lower()
             if not cmd:
                 continue
+            warned = False
             if cmd == "state":
                 continue            # the hints show it
             if cmd == "reset":
-                state = START
+                state = task.most_permissive_init(all_items(robot))
                 term.say("state reset: every item on the table, the gripper empty")
                 if robot.grip():
                     term.say(term.colour("warning", False) + ": the gripper holds something")
                 continue
             try:
-                formula, _ = parse_goal(line)
+                item_cmd = parse_item_command(line, robot.added)
+            except InvalidAction as e:
+                term.say(term.colour("invalid item command", False) + f": {e}")
+                continue
+            if item_cmd is not None:
+                name = item_cmd[1]
+                if item_command(term, robot, *item_cmd):
+                    # An added item stands on the table (it was just measured
+                    # there); a forgotten one leaves the state.
+                    state = frozenset(f for f in state if name not in f[1:])
+                    if item_cmd[0] == "new-item":
+                        state |= {("on-table", name)}
+                continue
+            items = all_items(robot)
+            try:
+                formula, _ = parse_goal(line, items)
             except (GoalError, OSError) as e:
                 # The hints list the items and predicates already.
                 why = str(e).split("; the items are")[0].split("; the predicates are")[0]
                 term.say(term.colour("invalid goal", False) + f": {why}")
+                m = re.search(r"unknown item '([a-z-]+)'", why)
+                if m:
+                    unknown_item_hint(term, m.group(1))
                 continue
             term.say(f"goal: {to_text(formula)}")
-            plan = plan_for(term, state, formula)
+            plan = plan_for(term, state, formula, items)
             if not plan:
                 continue
             term.say(f"plan ({actions(len(plan))}):")

@@ -4,6 +4,8 @@
     cup.py, mug.py, block.py                 config/items.yaml: collision
                                              shapes, resting poses, grasps,
                                              visual mesh
+    measured.py                              items added in the action
+                                             console for one session
     basket.py                                the basket
     table.py, room.py                        the table (with the robot's
                                              mounting plate) and the background
@@ -20,6 +22,7 @@ from .basket import Basket
 from .block import Block
 from .can import Can
 from .cup import Cup
+from .measured import Measured
 from .mug import Mug
 from .spray_bottle import SprayBottle
 from .tape_roll import TapeRoll
@@ -32,12 +35,18 @@ KINDS = {
     "cup": Cup,
     "mug": Mug,
     "block": Block,
+    "measured": Measured,
 }
+
+
+def make_item(name, spec):
+    """The item model of one spec (an items.yaml entry)."""
+    return KINDS[spec["kind"]](name, spec)
 
 
 def load_items():
     """{PDDL item name: item model} for every item in config/items.yaml."""
-    return {name: KINDS[spec["kind"]](name, spec) for name, spec in config.load_item_specs().items()}
+    return {name: make_item(name, spec) for name, spec in config.load_item_specs().items()}
 
 
 def load_basket(cell=None):

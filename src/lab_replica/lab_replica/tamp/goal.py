@@ -9,8 +9,9 @@ A goal is given as text, in any of these forms:
 
 The formula may use and, or, not, imply, forall and exists (quantified
 variables are of type item). It is checked against the domain (predicate
-names and arities) and the twelve items, so a typo fails here with a
-suggestion instead of in the planner.
+names and arities) and the items (the twelve, and those a console added
+with new-item:), so a typo fails here with a suggestion instead of in the
+planner.
 """
 
 import difflib
@@ -79,8 +80,9 @@ def goal_from_problem_file(path):
     return goal, objs
 
 
-def parse_goal(text_or_path):
+def parse_goal(text_or_path, items=pddl.ITEMS):
     """A validated goal formula (nested lists) from a goal text or a problem file.
+    `items`: the items it may name (the twelve, and any added in a console).
 
     Returns (formula, source) where source says where it came from."""
     if os.path.isfile(text_or_path):
@@ -98,31 +100,31 @@ def parse_goal(text_or_path):
             raise GoalError("empty goal")
         formula = exprs[0] if len(exprs) == 1 else ["and", *exprs]
         source = "the command line"
-    validate(formula)
+    validate(formula, items=items)
     return formula, source
 
 
-def validate(e, bound=()):
-    """Raise GoalError if `e` is not a formula over the domain and the items."""
+def validate(e, bound=(), items=pddl.ITEMS):
+    """Raise GoalError if `e` is not a formula over the domain and `items`."""
     if not isinstance(e, list) or not e or isinstance(e[0], list):
         raise GoalError(f"not a formula: {to_text(e) if isinstance(e, list) else e}")
     head = e[0]
     if head == "and" or head == "or":
         for x in e[1:]:
-            validate(x, bound)
+            validate(x, bound, items)
     elif head == "not":
         if len(e) != 2:
             raise GoalError(f"(not ...) takes one formula: {to_text(e)}")
-        validate(e[1], bound)
+        validate(e[1], bound, items)
     elif head == "imply":
         if len(e) != 3:
             raise GoalError(f"(imply A B) takes two formulas: {to_text(e)}")
-        validate(e[1], bound)
-        validate(e[2], bound)
+        validate(e[1], bound, items)
+        validate(e[2], bound, items)
     elif head in ("forall", "exists"):
         if len(e) != 3 or not isinstance(e[1], list):
             raise GoalError(f"({head} (?x - item) formula): {to_text(e)}")
-        validate(e[2], tuple(bound) + tuple(_variables(e[1])))
+        validate(e[2], tuple(bound) + tuple(_variables(e[1])), items)
     elif head in PREDICATES:
         args = e[1:]
         if len(args) != PREDICATES[head]:
@@ -133,11 +135,11 @@ def validate(e, bound=()):
             if a.startswith("?"):
                 if a not in bound:
                     raise GoalError(f"{to_text(e)}: {a} is not bound by forall/exists")
-            elif a not in pddl.ITEMS:
-                close = difflib.get_close_matches(a, pddl.ITEMS, n=2, cutoff=0.4)
+            elif a not in items:
+                close = difflib.get_close_matches(a, list(items), n=2, cutoff=0.4)
                 raise GoalError(f"{to_text(e)}: unknown item {a!r}"
                                 + (f" (did you mean {' or '.join(close)}?)" if close else "")
-                                + f"; the items are {', '.join(pddl.ITEMS)}")
+                                + f"; the items are {', '.join(items)}")
     else:
         close = difflib.get_close_matches(head, list(PREDICATES) + list(CONNECTIVES), n=1, cutoff=0.5)
         raise GoalError(f"{to_text(e)}: unknown predicate {head!r}"
@@ -161,18 +163,19 @@ def _variables(params):
 
 # ---- evaluating a goal --------------------------------------------------------------------
 
-def holds(e, facts, env=None):
-    """Whether formula `e` holds in the state `facts` (a set of fact tuples)."""
+def holds(e, facts, env=None, items=pddl.ITEMS):
+    """Whether formula `e` holds in the state `facts` (a set of fact tuples);
+    forall and exists range over `items`."""
     env = env or {}
     head = e[0]
     if head == "and":
-        return all(holds(x, facts, env) for x in e[1:])
+        return all(holds(x, facts, env, items) for x in e[1:])
     if head == "or":
-        return any(holds(x, facts, env) for x in e[1:])
+        return any(holds(x, facts, env, items) for x in e[1:])
     if head == "not":
-        return not holds(e[1], facts, env)
+        return not holds(e[1], facts, env, items)
     if head == "imply":
-        return not holds(e[1], facts, env) or holds(e[2], facts, env)
+        return not holds(e[1], facts, env, items) or holds(e[2], facts, env, items)
     if head in ("forall", "exists"):
         vs = _variables(e[1])
 
@@ -180,10 +183,10 @@ def holds(e, facts, env=None):
             if k == len(vs):
                 yield cur
                 return
-            for it in pddl.ITEMS:
+            for it in items:
                 yield from assignments(k + 1, {**cur, vs[k]: it})
         test = all if head == "forall" else any
-        return test(holds(e[2], facts, a) for a in assignments(0, env))
+        return test(holds(e[2], facts, a, items) for a in assignments(0, env))
     return (head, *(env.get(a, a) for a in e[1:])) in facts
 
 

@@ -14,6 +14,19 @@ executed by the skills (README section A.3); the answer is
     action success: <what was done>
     action failed: <reason>          a refused action leaves the scene as it was
 
+New items (README "Add a new item"), for this session only:
+
+    new-item: purple-block           the robot looks for "purple block" on the
+                                     table (SAM 3), measures its width and height
+                                     from the depth and adds it to the items (a
+                                     box or a round model)
+    new-item: purple-block prompt="small purple cube" shape=box
+                                     another text prompt; force the shape
+    forget-item: purple-block        remove an added item
+
+Added items are not PDDL objects (config/domain.pddl and the problem files
+are unchanged) and are gone when the console quits.
+
 A window shows the wrist camera live (colour and depth side by side) and
 every view the robot takes, annotated (viewer.py); --no-window leaves it out.
 
@@ -26,16 +39,18 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), ".."))
 
-from lab_replica.console import (ACTIONS, InvalidAction, Robot, Terminal, banner, common_arguments,  # noqa: E402
-                                 parse_action, wrap_words)
+from lab_replica.console import (ACTIONS, FORGET_ITEM, NEW_ITEM, InvalidAction, Robot, Terminal,  # noqa: E402
+                                 banner, common_arguments, item_command, item_hints, parse_action,
+                                 parse_item_command, unknown_item_hint, warn_holding_added, wrap_words)
 from lab_replica.planning import pddl  # noqa: E402
 
 
-def hints(term):
+def hints(term, added):
     term.say()
     term.say(term.bold("Actions: ") + "   ".join(f"({a} <item>)" for a in ACTIONS))
-    term.say(term.bold("Items:   ") + wrap_words(pddl.ITEMS, 9))
+    term.say(term.bold("Items:   ") + wrap_words(pddl.ITEMS + [i + "*" for i in added], 9))
     term.say(term.bold("Example: ") + "(pick-up green-mug)   then   (put-in-basket green-mug)")
+    item_hints(term, added)
     term.say(term.dim("Tab completes names; Ctrl-D quits."))
 
 
@@ -46,24 +61,39 @@ def main():
     ap.add_argument("--no-window", action="store_true",
                     help="do not open the camera window (live colour and depth, annotated observations)")
     args, _ = ap.parse_known_args()
-    term = Terminal(list(ACTIONS) + list(pddl.ITEMS), "actions")
+    term = Terminal(list(ACTIONS) + list(pddl.ITEMS) + [NEW_ITEM, FORGET_ITEM], "actions")
     banner(term, "action console", args.sim)
     robot = Robot(term, sim=args.sim, speed_scale=args.speed_scale, verbose=args.verbose,
                   return_home=not args.no_home, save_frames=args.save_frames, window=not args.no_window)
     term.say(f"Ready. Log and camera views: {robot.run_dir}")
+    warned = False
     try:
         while True:
-            hints(term)
+            hints(term, robot.added)
             with robot.idle():
                 line = term.ask("action> ")
             if line is None or line.strip().lower() in ("quit", "exit", "q"):
+                if not warned and warn_holding_added(term, robot):
+                    warned = True
+                    continue
                 break
             if not line.strip():
                 continue
+            warned = False
             try:
-                action = parse_action(line)
+                cmd = parse_item_command(line, robot.added)
+            except InvalidAction as e:
+                term.say(term.colour("invalid item command", False) + f": {e}")
+                continue
+            if cmd is not None:
+                item_command(term, robot, *cmd)
+                continue
+            try:
+                action = parse_action(line, robot.added)
             except InvalidAction as e:
                 term.say(term.colour("invalid action string", False) + f": {e}")
+                if str(e).startswith("unknown item"):
+                    unknown_item_hint(term, line.lower().replace("(", " ").replace(")", " ").split()[-1])
                 continue
             term.say(f"performing action {action}")
             ok, msg = robot.execute(action)

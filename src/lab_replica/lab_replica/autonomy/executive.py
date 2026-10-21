@@ -125,6 +125,11 @@ class ActionExecutive:
                 d = json.load(f)
         except (OSError, ValueError):
             return
+        if d and d["item"] not in self.items:
+            # An item added in an earlier console session (new-item:) is not
+            # known any more; the gripper's own flag still says it is not empty.
+            self.log(f"remembered holding {d['item']}, which is not an item now: forgotten")
+            return
         if d:
             h = d["held"]
             h["offset_obj"] = tuple(h["offset_obj"])
@@ -271,26 +276,8 @@ class ActionExecutive:
         if not cl.get("enabled", False):
             return None
         p = scene.detections[item].estimate.placement
-        # The camera is beside the gripper: turning the view about the
-        # vertical moves the gripper around the item. Try first the turns that
-        # put the gripper farthest from the robot's base axis: near the base
-        # the arm folds over its own shoulder, low over the table.
-        ups = [(math.cos(a), math.sin(a), 0.0) for a in np.arange(8) * math.pi / 4]
-        T_cam_grip = inv_tf(self.views.T_grip_cam)
-
-        def grip_r(up):
-            T = down_view(p.x, p.y, cl["height"], up) @ T_cam_grip
-            return -math.hypot(T[0, 3], T[1, 3])
-
-        ups.sort(key=grip_r)
-        world = scene.world()
-        for up in ups:
-            try:
-                frame = self.look(down_view(p.x, p.y, cl["height"], up), world, held, "look closer")
-                break
-            except PlanError:
-                continue
-        else:
+        frame = self.look_down_at(p.x, p.y, cl["height"], scene.world(), held)
+        if frame is None:
             self.log(f"  no close look at {item} possible; using the survey")
             return None
         self.phase(f"recognising {item} from closer")
@@ -307,6 +294,28 @@ class ActionExecutive:
         self.map_depth(scene, scene.depth_frames + [frame], held)
         self.publish_detections(frame, scene, "closer look: SAM 3 + depth")
         return frame
+
+    def look_down_at(self, x, y, height, world, held=None):
+        """A frame looking straight down at (x, y) from `height` above the
+        table, or None when no such view is reachable."""
+        # The camera is beside the gripper: turning the view about the
+        # vertical moves the gripper around the item. Try first the turns that
+        # put the gripper farthest from the robot's base axis: near the base
+        # the arm folds over its own shoulder, low over the table.
+        ups = [(math.cos(a), math.sin(a), 0.0) for a in np.arange(8) * math.pi / 4]
+        T_cam_grip = inv_tf(self.views.T_grip_cam)
+
+        def grip_r(up):
+            T = down_view(x, y, height, up) @ T_cam_grip
+            return -math.hypot(T[0, 3], T[1, 3])
+
+        ups.sort(key=grip_r)
+        for up in ups:
+            try:
+                return self.look(down_view(x, y, height, up), world, held, "look closer")
+            except PlanError:
+                continue
+        return None
 
     def map_depth(self, scene, frames, held=None):
         """scene.depth: the obstacle model from these frames (depth_world.py)."""
@@ -574,6 +583,129 @@ class ActionExecutive:
             return self.views.to_topdown(q, world, width, held=held)
         finally:
             self.views.sk.depth = None
+
+    # ---- items added at run time ------------------------------------------------------------
+
+    def add_item(self, name, spec):
+        """Know `name` from now on: its model (objects/measured.py) and its SAM 3 prompts."""
+        self.items[name] = objects.make_item(name, spec)
+        self.perception.add_prompts(name, spec["prompts"])
+
+    def forget_item(self, name):
+        self.items.pop(name, None)
+        self.perception.remove_prompts(name)
+
+    def new_item(self, name, prompt, shape=None):
+        """Find an item that is not known yet on the table by its text
+        prompt, measure it and add it (add_item). Returns (success, message,
+        spec); the spec is an objects/measured.py spec."""
+        t0 = time.time()
+        self.log(f"== new item {name}: {prompt!r}")
+        self.action = f"new-item {name}"
+        try:
+            spec, msg = self._measure_new(name, prompt, shape)
+        except (ActionError, PlanError) as e:
+            self.phase(f"failed: {e}")
+            return False, str(e), None
+        self.add_item(name, spec)
+        self.phase(f"done: new item {name} ({time.time() - t0:.0f} s)")
+        return True, msg, spec
+
+    def _find_new(self, frame, prompt, known, basket_xy, near=None):
+        """(SAM score, mask, world points) of the best mask of `prompt` in
+        `frame` on the table, or None. Masks of known items that SAM 3 named
+        better are skipped; `near` (x, y) keeps only masks within 5 cm of it."""
+        from ..perception.scene import _overlap
+        res = self.perception.sam.segment(frame.rgb, [prompt], threshold=self.cfg["sam3"]["threshold"])[prompt]
+        best = None
+        for inst in res:
+            if any(d.frame is frame and d.sam_score >= inst.score and _overlap(d.mask, inst.mask) > 0.5
+                   for d in known.values()):
+                continue
+            # Not eroded: the size is read from the mask's outline (eroding
+            # 1 px made a 60 x 30 mm block 56 x 27 mm in simulation).
+            pts = self.perception._points(frame, inst.mask, erode_px=0)
+            pts = pts[pts[:, 2] > self.cell["table"]["surface_z"] + 0.004]
+            if len(pts) < 30:
+                continue
+            c = np.median(pts[:, :2], axis=0)
+            if basket_xy is not None and math.hypot(*(c - basket_xy)) < self.basket.r_top + 0.01:
+                self.log(f"  {prompt!r} (score {inst.score:.2f}) is in the basket: skipped")
+                continue
+            if near is not None and math.hypot(*(c - np.asarray(near))) > 0.05:
+                continue
+            if best is None or inst.score > best[0]:
+                best = (inst.score, inst.mask, pts)
+        return best
+
+    def _measure_new(self, name, prompt, shape):
+        from ..perception.estimate import estimate_item, measure_item
+        if self.holding():
+            raise ActionError("the gripper is holding something: put it down first, then measure the new item")
+        scene = self.survey()
+        self.phase(f"looking for {prompt!r} (SAM 3)")
+        found = None
+        for f in scene.frames:
+            hit = self._find_new(f, prompt, scene.detections, scene.basket_xy)
+            if hit is not None and (found is None or hit[0] > found[0]):
+                found = hit + (f,)
+        if found is None:
+            raise ActionError(f"nothing on the table looks like {prompt!r} to SAM 3 "
+                              f"(try another description: prompt=\"...\")")
+        score, mask, pts, frame = found
+        c = np.median(pts[:, :2], axis=0)
+        self.log(f"  {prompt!r} found with score {score:.2f} at ({c[0]:.3f}, {c[1]:.3f})")
+        notes = []
+        cl = self.cfg.get("close_look", {})
+        close = self.look_down_at(c[0], c[1], cl.get("height", 0.5), scene.world())
+        if close is not None:
+            self.phase(f"measuring {name} from closer")
+            hit = self._find_new(close, prompt, {}, scene.basket_xy, near=c)
+            if hit is not None:
+                score, mask, pts = hit
+                frame = close
+            else:
+                notes.append("not found again from closer: measured from the survey")
+        else:
+            notes.append("no closer view reachable: measured from the survey")
+        table_z = self.cell["table"]["surface_z"]
+        m = measure_item(pts, table_z, shape)
+        if m is None:
+            raise ActionError(f"too few depth points on {prompt!r} to measure it")
+        shape, size, more = m
+        notes += more
+        width, height = (size[0] if shape == "round" else size[1]), size[-1]
+        if width > rg6.MAX_WIDTH - 0.01:
+            raise ActionError(f"{name} is {width * 1000:.0f} mm wide, too wide for the RG6 "
+                              f"(it opens {rg6.MAX_WIDTH * 1000:.0f} mm)")
+        if height > self.cfg["max_item_height"]:
+            raise ActionError(f"{name} is {height * 100:.0f} cm tall; items may be at most "
+                              f"{self.cfg['max_item_height'] * 100:.0f} cm (perception.yaml max_item_height)")
+        if height < 0.015:
+            notes.append(f"only {height * 1000:.0f} mm tall: the pads stop 8 mm above the table "
+                         f"(objects/base.py TIP_CLEARANCE) and hold little of it")
+        color = np.median(frame.rgb[mask], axis=0) / 255.0
+        spec = {"kind": "measured", "shape": shape, "size": [float(v) for v in size], "mass": 0.1,
+                "color": [round(float(v), 3) for v in color],
+                "stable_poses": ["upright" if shape == "round" else "flat"], "prompts": [prompt],
+                "measured": time.strftime("%Y-%m-%d %H:%M")}
+        # The new model must explain the points it was made from.
+        model = objects.make_item(name, spec)
+        est = estimate_item(model, pts, table_z, self.basket, scene.basket_xy)
+        if est is None or est.plausibility < 0.5:
+            notes.append(f"its model fits its own points badly (plausibility "
+                         f"{0 if est is None else est.plausibility:.2f})")
+        dims = " x ".join(f"{v * 1000:.0f}" for v in size) + " mm"
+        what = f"{shape} {dims}" + (" (diameter x height)" if shape == "round" else " (length x width x height)")
+        self.show(frame, lambda v: annotate.draw_measure(v, mask, model, est.placement if est else None, dims,
+                                                         f"new item {name}: {what}",
+                                                         f"{prompt!r}, SAM 3 score {score:.2f}; magenta: its mask, "
+                                                         f"green: the model made from it"), f"new item {name}")
+        self.log(f"  {name}: {what}; " + "; ".join(notes))
+        if self.return_home:
+            self.go_home(self.skills_for(scene), scene.world(), None)
+        msg = f"{name} is a {what}, SAM 3 score {score:.2f}"
+        return spec, msg + "".join(f"\n    note: {n}" for n in notes)
 
     def go_home(self, sk, world, held):
         self.phase("returning home")

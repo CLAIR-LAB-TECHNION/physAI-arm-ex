@@ -245,7 +245,7 @@ def draw_table(frame, cell, items, basket, scene, region, footprint, target, sou
     return vis
 
 
-# ---- every observation, the grasp ---------------------------------------------------------------
+# ---- every observation, the grasp, a new item ---------------------------------------------------
 
 
 def draw_perception(frame, scene, items, basket, table_z, title, sub=None):
@@ -332,3 +332,18 @@ def draw_grasp(frame, model, placement, held, open_width, force, title):
     banner(vis, title, "white: fingers open on the way down; green: where they close")
     return vis
 
+
+def draw_measure(frame, mask, model, placement, what, title, sub=None):
+    """A new item: its SAM 3 mask and the model made from the measurement."""
+    vis = frame.rgb[:, :, ::-1].copy()
+    if mask is not None and mask.shape == vis.shape[:2]:
+        vis[mask] = (0.5 * vis[mask] + 0.5 * np.array([255, 0, 255])).astype(np.uint8)
+    if model is not None and placement is not None:
+        p = placement
+        top = model.poses[p.rest].top
+        prism(vis, frame, model.footprint_world(p.rest, p.x, p.y, p.yaw), p.z_support, p.z_support + top, GREEN, 2)
+        uv = _px(frame, [[p.x, p.y, p.z_support + top]])
+        if uv is not None:
+            label(vis, what, uv[0] + [30, -20], GREEN, scale=vis.shape[1] / 1300.0)
+    banner(vis, title, sub)
+    return vis

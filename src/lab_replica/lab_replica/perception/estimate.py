@@ -205,6 +205,16 @@ def _spray_bottle(item, rest, pts, top_abs):
     return hc - s["head_offset"] * u, a, notes
 
 
+def _measured(item, rest, pts, top_abs):
+    """An item added at run time (objects/measured.py)."""
+    if item.spec["shape"] == "round":
+        c, _ = circle_fit(pts[:, :2], item.spec["size"][0] / 2)
+        return c, 0.0, []
+    h = item.spec["size"][2]
+    c, _, a = rect_fit(_top_layer(pts, top_abs, max(0.004, min(0.008, 0.4 * h)))[:, :2])
+    return c, wrap(a % math.pi), []
+
+
 def _generic(item, rest, pts, top_abs):
     c, _, a = rect_fit(pts[:, :2])
     return c, a, ["generic fit"]
@@ -217,7 +227,51 @@ _KINDS = {
     "can": _can,
     "mug": _mug,
     "spray_bottle": _spray_bottle,
+    "measured": _measured,
 }
+
+
+# ---- measuring a new item ----------------------------------------------------------------
+
+ROUND_FILL = 0.83   # outline area / its minimum rectangle's: 1 for a box, pi / 4 for a disk;
+                    # low, because a box taken for round would be grasped across its corners
+
+
+def measure_item(pts, table_z, shape=None):
+    """Size of an unknown item standing on the table, from the world points
+    of its mask: (shape, size, notes) with shape 'box' (size [length, width,
+    height], length >= width) or 'round' (size [diameter, height]); None with
+    too few points. `shape` forces the shape (default: from the outline of
+    its top, a disk fills pi / 4 of its square, a rectangle all of it).
+
+    The points are 3D, so the side walls a slanted view sees fall inside the
+    outline; percentiles drop the odd stray pixel at the mask's edge."""
+    pts = np.asarray(pts, float)
+    pts = pts[pts[:, 2] > table_z + 0.004]
+    if len(pts) < 30:
+        return None
+    h = _robust_top(pts[:, 2]) - table_z
+    top = _top_layer(pts, table_z + h, max(0.004, min(0.01, 0.4 * h)))
+    (cx, cy), (w0, h0), ang = cv2.minAreaRect(top[:, :2].astype(np.float32))
+    notes = []
+    if shape is None:
+        hull = cv2.convexHull(top[:, :2].astype(np.float32))
+        fill = cv2.contourArea(hull) / max(w0 * h0, 1e-9)
+        shape = "round" if fill < ROUND_FILL else "box"
+        notes.append(f"top outline fills {fill:.2f} of its rectangle: {shape}")
+    a = math.radians(ang)
+    u = np.array([math.cos(a), math.sin(a)])
+    v = np.array([-u[1], u[0]])
+    xy = pts[:, :2] - np.array([cx, cy])
+    ext = []
+    for d in (u, v):
+        t = xy @ d
+        lo, hi = np.percentile(t, [1, 99])
+        ext.append(float(hi - lo))
+    length, width = max(ext), min(ext)
+    if shape == "round":
+        return "round", [round((length + width) / 2, 4), round(h, 4)], notes
+    return "box", [round(length, 4), round(width, 4), round(h, 4)], notes
 
 
 # ---- the basket ------------------------------------------------------------------------
