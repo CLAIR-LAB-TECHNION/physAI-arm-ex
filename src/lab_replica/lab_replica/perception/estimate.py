@@ -13,6 +13,11 @@ is fitted to the points with the item's own dimensions:
 
 Points are world points (z up, the table top at z = table_z). The camera is
 assumed to look roughly down, so every item's top is visible.
+
+The estimate itself is the exercise's (exercise/state_estimation.py
+estimate_placement); this module has the fits it uses (circle_fit,
+rect_fit, ...), the mug's and the spray bottle's shapes, the measuring of
+a new item and the basket.
 """
 
 import math
@@ -67,92 +72,32 @@ def rect_fit(xy):
     return np.array([cx, cy]), (w, h), wrap(a)
 
 
-def _robust_top(z):
+def robust_top(z):
     return float(np.percentile(z, 97)) if len(z) else float("nan")
 
 
-def _gauss(err, scale):
+def gauss(err, scale):
     return math.exp(-(err / scale) ** 2)
 
 
-# ---- the item kinds --------------------------------------------------------------------
+# ---- the item kinds (the simple ones are in exercise/state_estimation.py) ----------------
 
 
 def estimate_item(item, pts, table_z, basket=None, basket_xy=None):
     """Estimate of `item` (an objects.* model) from world points (N, 3), or
-    None when there are too few points."""
-    pts = np.asarray(pts, float)
-    if len(pts) < 30:
-        return None
-    support, z_floor = "table", table_z
-    if basket is not None and basket_xy is not None:
-        c = np.median(pts[:, :2], axis=0)
-        if math.hypot(*(c - basket_xy)) < basket.inner_radius(basket.height) - 0.005:
-            support, z_floor = "basket", table_z + basket.floor
-    pts = pts[pts[:, 2] > z_floor + 0.004]
-    if len(pts) < 30:
-        return None
-    top_abs = _robust_top(pts[:, 2])
-    # Resting pose: the one whose height matches. In the basket the item may
-    # lie on others, so it is only matched against the floor if that fits.
-    rests = list(item.spec["stable_poses"])
-    h = top_abs - z_floor
-    rest = min(rests, key=lambda r: abs(item.poses[r].top - h))
-    rp = item.poses[rest]
-    if support == "basket":
-        z_support = max(z_floor, top_abs - rp.top)
-    else:
-        z_support = table_z
-    fn = _KINDS.get(item.kind, _generic)
-    xy, yaw, notes = fn(item, rest, pts, top_abs)
-    # Plausibility: height of the top above the support and the size of the
-    # outline must match the model.
-    if support == "table":
-        dh = abs(rp.top - (top_abs - z_support))
-    else:
-        # In the basket an item may rest on others (taller is fine), but it
-        # cannot be shorter than its model.
-        dh = max(0.0, rp.top - (top_abs - z_floor))
-    fp = rp.footprint
-    ext_model = max(np.ptp(fp[:, 0]), np.ptp(fp[:, 1]))
-    _, (w, _), _ = rect_fit(pts[:, :2])
-    plaus = _gauss(dh, 0.025) * _gauss(max(0.0, w - ext_model * 1.15), 0.03)
-    p = Placement(item.name, rest, float(xy[0]), float(xy[1]), float(yaw), support=support,
-                  z_support=float(z_support))
-    return Estimate(p, plaus, len(pts), top_abs, notes)
+    None when there are too few points: the exercise's estimate_placement
+    (exercise/state_estimation.py)."""
+    from ..exercise.state_estimation import estimate_placement
+    return estimate_placement(item, pts, table_z, basket, basket_xy)
 
 
-def _top_layer(pts, top_abs, band):
+def top_layer(pts, top_abs, band):
     return pts[pts[:, 2] > top_abs - band]
 
 
-def _round(radius_key, band=0.008):
-    def f(item, rest, pts, top_abs):
-        r = item.spec[radius_key] / 2
-        c, _ = circle_fit(_top_layer(pts, top_abs, band)[:, :2], r)
-        return c, 0.0, []
-    return f
-
-
-def _block(item, rest, pts, top_abs):
-    c, (w, h), a = rect_fit(_top_layer(pts, top_abs, 0.008)[:, :2])
-    notes = [] if abs(w - item.spec["size"]) < 0.015 else [f"top face {w * 1000:.0f} x {h * 1000:.0f} mm"]
-    return c, wrap(a % (math.pi / 2)), notes
-
-
-def _can(item, rest, pts, top_abs):
-    if rest == "upright":
-        return _round("diameter", 0.01)(item, rest, pts, top_abs)
-    # Lying: the upper half of the cylinder is a rectangle along the can's
-    # axis, which lies along the rested frame's y axis.
-    d = item.spec["diameter"]
-    c, _, a = rect_fit(_top_layer(pts, top_abs, d * 0.4)[:, :2])
-    return c, wrap(a - math.pi / 2), []
-
-
-def _mug(item, rest, pts, top_abs):
+def fit_mug(item, rest, pts, top_abs):
     s = item.spec
-    c, _ = circle_fit(_top_layer(pts, top_abs, 0.008)[:, :2], s["top_diameter"] / 2)
+    c, _ = circle_fit(top_layer(pts, top_abs, 0.008)[:, :2], s["top_diameter"] / 2)
     r_body = s["top_diameter"] / 2
     d = pts[:, :2] - c
     rr = np.hypot(d[:, 0], d[:, 1])
@@ -187,9 +132,9 @@ def mug_handle_yaw(item, est, context):
     return float(np.angle(np.exp(1j * near).mean()))
 
 
-def _spray_bottle(item, rest, pts, top_abs):
+def fit_spray_bottle(item, rest, pts, top_abs):
     s = item.spec
-    head = _top_layer(pts, top_abs, s["head_height"] * 0.6)
+    head = top_layer(pts, top_abs, s["head_height"] * 0.6)
     hc, _, a = rect_fit(head[:, :2])
     body = pts[pts[:, 2] < top_abs - s["head_height"] - s["neck_height"] - 0.01]
     u = np.array([math.cos(a), math.sin(a)])
@@ -203,32 +148,6 @@ def _spray_bottle(item, rest, pts, top_abs):
         notes.append("body not seen: nozzle direction unknown")
     u = np.array([math.cos(a), math.sin(a)])
     return hc - s["head_offset"] * u, a, notes
-
-
-def _measured(item, rest, pts, top_abs):
-    """An item added at run time (objects/measured.py)."""
-    if item.spec["shape"] == "round":
-        c, _ = circle_fit(pts[:, :2], item.spec["size"][0] / 2)
-        return c, 0.0, []
-    h = item.spec["size"][2]
-    c, _, a = rect_fit(_top_layer(pts, top_abs, max(0.004, min(0.008, 0.4 * h)))[:, :2])
-    return c, wrap(a % math.pi), []
-
-
-def _generic(item, rest, pts, top_abs):
-    c, _, a = rect_fit(pts[:, :2])
-    return c, a, ["generic fit"]
-
-
-_KINDS = {
-    "block": _block,
-    "tape_roll": _round("outer_diameter", 0.006),
-    "cup": _round("top_diameter", 0.010),
-    "can": _can,
-    "mug": _mug,
-    "spray_bottle": _spray_bottle,
-    "measured": _measured,
-}
 
 
 # ---- measuring a new item ----------------------------------------------------------------
@@ -250,8 +169,8 @@ def measure_item(pts, table_z, shape=None):
     pts = pts[pts[:, 2] > table_z + 0.004]
     if len(pts) < 30:
         return None
-    h = _robust_top(pts[:, 2]) - table_z
-    top = _top_layer(pts, table_z + h, max(0.004, min(0.01, 0.4 * h)))
+    h = robust_top(pts[:, 2]) - table_z
+    top = top_layer(pts, table_z + h, max(0.004, min(0.01, 0.4 * h)))
     (cx, cy), (w0, h0), ang = cv2.minAreaRect(top[:, :2].astype(np.float32))
     notes = []
     if shape is None:

@@ -53,11 +53,8 @@ class Frame:
         ok = np.isfinite(d) & (d > 0)
         if mask is not None:
             ok &= mask[::stride, ::stride]
-        u, v, z = uu[ok], vv[ok], d[ok]
-        fx, fy, cx, cy = self.K[0, 0], self.K[1, 1], self.K[0, 2], self.K[1, 2]
-        P = np.stack([(u - cx) / fx * z, (v - cy) / fy * z, z], axis=1)
-        T = self.T_world_cam
-        return P @ T[:3, :3].T + T[:3, 3]
+        from ..exercise.state_estimation import pixels_to_world
+        return pixels_to_world(uu[ok], vv[ok], d[ok], self.K, self.T_world_cam)
 
     def project(self, P):
         """World points -> (u, v) pixels and depth along the view."""

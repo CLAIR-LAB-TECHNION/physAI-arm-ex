@@ -38,7 +38,7 @@ from lab_replica.console import (FORGET_ITEM, NEW_ITEM, PREDICATES, InvalidActio
                                  unknown_item_hint, warn_holding_added, wrap_words)
 from lab_replica.planning import pddl  # noqa: E402
 from lab_replica.tamp import planner, task  # noqa: E402
-from lab_replica.tamp.execute import effect  # noqa: E402
+from lab_replica.exercise.task_planning import planning as tp  # noqa: E402
 from lab_replica.tamp.goal import CONNECTIVES, GoalError, holds, parse_goal, to_text  # noqa: E402
 
 
@@ -179,31 +179,39 @@ def main():
             term.say(f"plan ({actions(len(plan))}):")
             for k, a in enumerate(plan):
                 term.say(f"  {k + 1}. {a}")
-            for k, action in enumerate(plan):
-                nxt = effect(state, action)
+            n = len(plan)
+            failed = []
+
+            def before(k, action):
                 if args.step:
-                    answer = term.ask(f"Enter performs action {k + 1}/{len(plan)} {action} (n + Enter stops) ")
+                    answer = term.ask(f"Enter performs action {k + 1}/{n} {action} (n + Enter stops) ")
                     if answer is None or answer.strip().lower().startswith("n"):
                         term.say("stopped before the action")
-                        break
-                term.say(f"performing action {k + 1}/{len(plan)}: {action}")
-                ok, msg = robot.execute(action)
-                if not ok:
+                        return False
+                term.say(f"performing action {k + 1}/{n}: {action}")
+                return True
+
+            def after(k, action, ok, msg):
+                if ok:
+                    term.say(term.colour("action success", True) + f": {msg}")
+                else:
+                    failed.append(k)
                     term.say(term.colour("action failed", False) + f": {msg}")
-                    term.say(term.colour("goal not reached", False)
-                             + f": stopped at action {k + 1} of {len(plan)}; the state below is the one "
-                               "before that action")
-                    grip, held = robot.grip(), pddl.held(state)
-                    if grip is not None and grip != (held is not None):
-                        term.say(term.colour("warning", False) + ": the gripper is "
-                                 + ("holding something" if grip else "empty") + ", unlike the state below: "
-                                 "check the scene, then use `reset` or the action console")
-                    break
-                term.say(term.colour("action success", True) + f": {msg}")
-                state = nxt
-            else:
+
+            # The exercise's plan execution (exercise/task_planning/planning.py).
+            state, failed_at = tp.execute_plan(state, list(plan), plan.states, robot.execute, before, after)
+            if failed_at is None:
                 term.say(term.colour("goal reached", True)
-                         + f" ({actions(len(plan))}; the state is what they should have produced)")
+                         + f" ({actions(n)}; the state is what they should have produced)")
+            elif failed:
+                term.say(term.colour("goal not reached", False)
+                         + f": stopped at action {failed_at + 1} of {n}; the state below is the one "
+                           "before that action")
+                grip, held = robot.grip(), pddl.held(state)
+                if grip is not None and grip != (held is not None):
+                    term.say(term.colour("warning", False) + ": the gripper is "
+                             + ("holding something" if grip else "empty") + ", unlike the state below: "
+                             "check the scene, then use `reset` or the action console")
     except KeyboardInterrupt:
         term.say()
     finally:

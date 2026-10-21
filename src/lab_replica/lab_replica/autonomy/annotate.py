@@ -333,6 +333,38 @@ def draw_grasp(frame, model, placement, held, open_width, force, title):
     return vis
 
 
+def draw_image_grasp(frame, mask, grasps, title):
+    """Grasps proposed in the image (exercise: state_estimation.grasp_in_image),
+    best first: the item's mask, the pixel the fingers close around, the
+    closing direction and the item's width across it (the two pads); the
+    first grasp bold, the others thin."""
+    vis = _dim(frame)
+    if mask is not None and mask.shape == vis.shape[:2]:
+        vis[mask] = (0.5 * vis[mask] + 0.5 * np.array(ORANGE)).astype(np.uint8)
+    for k, grasp in reversed(list(enumerate(grasps))):
+        c = np.array([grasp.u, grasp.v])
+        d = np.array([math.cos(grasp.angle), math.sin(grasp.angle)])
+        t = np.array([-d[1], d[0]])
+        half = grasp.width_px / 2
+        pad = max(6.0, 0.35 * grasp.width_px)
+        col, th = (GREEN, 3) if k == 0 else (WHITE, 1)
+        for side in (-1, 1):
+            a = c + side * d * (half + 0.3 * grasp.width_px + 12)
+            b = c + side * d * half
+            cv2.arrowedLine(vis, tuple(int(v) for v in a), tuple(int(v) for v in b), col, th, cv2.LINE_AA,
+                            tipLength=0.3)
+            p0, p1 = b + side * d * 4 + t * pad, b + side * d * 4 - t * pad
+            cv2.line(vis, tuple(int(v) for v in p0), tuple(int(v) for v in p1), col, th + 1, cv2.LINE_AA)
+    if grasps:
+        g = grasps[0]
+        cv2.drawMarker(vis, (int(g.u), int(g.v)), WHITE, cv2.MARKER_CROSS, 16, 2)
+        label(vis, f"({g.u:.0f}, {g.v:.0f}) px, {math.degrees(g.angle):.0f} deg, {g.width_px:.0f} px across",
+              (8, vis.shape[0] - 10), GREEN)
+    banner(vis, title, "orange: the item's pixels; green: the first grasp (pads and closing direction), "
+                       "white: the others")
+    return vis
+
+
 def draw_measure(frame, mask, model, placement, what, title, sub=None):
     """A new item: its SAM 3 mask and the model made from the measurement."""
     vis = frame.rgb[:, :, ::-1].copy()

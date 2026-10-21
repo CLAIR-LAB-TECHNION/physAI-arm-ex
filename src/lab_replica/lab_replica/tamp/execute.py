@@ -69,18 +69,9 @@ class SkillClient:
         return dict(ok=bool(r.success), message=r.message, held=r.held, seconds=round(time.time() - t0, 1))
 
 
-def effect(state, action):
-    """The PDDL state after `action`, or None if it is not applicable. The
-    item may be any (also one added with new-item:)."""
-    item = action.strip().strip("()").split()[-1]
-    for a, s in pddl.successors(state, items=[item]):
-        if a == action:
-            return s
-    return None
-
-
 def execute_plan(skills, init, plan, log=print, setup=True, step=False, on_action=None):
-    """Execute `plan` from `init`. `on_action(k, action, status)`, if given,
+    """Execute `plan` (a task.Plan: its actions and the states they should
+    produce) from `init`. `on_action(k, action, status)`, if given,
     is called with status "running", then "ok" or "failed" (k = -1 for the
     setup action). Returns a report dict:
         ok           every action succeeded
@@ -107,9 +98,7 @@ def execute_plan(skills, init, plan, log=print, setup=True, step=False, on_actio
                 report["state"] = sorted(map(pddl.fact_str, state))
                 return report
     for k, action in enumerate(plan):
-        nxt = effect(state, action)
-        if nxt is None:
-            raise ValueError(f"{action} is not applicable in the planned state: the plan does not fit the init")
+        nxt = frozenset(plan.states[k])
         if step:
             input(f"   Enter to run action {k + 1}/{len(plan)} {action} (Ctrl-C to stop) ")
         log(f"== {k + 1}/{len(plan)} {action}")

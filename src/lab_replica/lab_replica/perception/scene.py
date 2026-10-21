@@ -15,6 +15,7 @@ import cv2
 import numpy as np
 
 from .. import config
+from ..exercise import state_estimation as se
 from .estimate import estimate_basket, estimate_item, mug_handle_yaw
 
 
@@ -119,14 +120,8 @@ class ScenePerception:
             if est2 is not None and est2.plausibility > d.estimate.plausibility:
                 est2.notes.append("grown beyond the mask")
                 d.estimate, d.score = est2, d.sam_score * est2.plausibility
-        cands.sort(key=lambda d: -d.score)
-        chosen = {}
-        for d in cands:
-            if d.item in chosen or d.score < self.cfg["min_assignment_score"]:
-                continue
-            if any(_overlap(d.mask, o.mask) > 0.5 for o in chosen.values()):
-                continue
-            chosen[d.item] = d
+        # One mask per item, one item per mask (the exercise's assign_masks).
+        chosen = se.assign_masks(cands, self.cfg["min_assignment_score"])
         # The mug's handle is usually not part of its mask: look for it in
         # the depth points around the body that belong to nothing else.
         for item, d in chosen.items():
@@ -153,27 +148,16 @@ class ScenePerception:
         weights = list(weights or [1.0] * len(frames))
         scene = Scene(frames=list(frames))
         best_basket = None
-        ranked = {}
+        per_view = []
         for k, f in enumerate(frames):
             dets, bxy = self.detect(f, items, basket_xy, view=k, exclude=exclude)
             if bxy is not None and (best_basket is None or weights[k] > best_basket[0]):
                 best_basket = (weights[k], np.asarray(bxy, float))
-            for item, d in dets.items():
-                ranked.setdefault(item, []).append((d.score * weights[k], d))
+            per_view.append(dets)
         scene.basket_xy = np.asarray(basket_xy, float) if basket_xy is not None else (
             best_basket[1] if best_basket else None)
-        # Best detection per item; two items cannot stand in one place.
-        order = sorted(((max(r, key=lambda t: t[0])[0], it) for it, r in ranked.items()), reverse=True)
-        for _, item in order:
-            for w, d in sorted(ranked[item], key=lambda t: -t[0]):
-                p = d.estimate.placement
-                clash = any(o.estimate.placement.support == p.support and
-                            np.hypot(o.estimate.placement.x - p.x, o.estimate.placement.y - p.y) < 0.025 and
-                            abs(o.estimate.placement.z_support - p.z_support) < 0.03
-                            for o in scene.detections.values())
-                if not clash:
-                    scene.detections[item] = d
-                    break
+        # Best detection per item; two items cannot stand in one place (the exercise's fuse_views).
+        scene.detections = se.fuse_views(per_view, weights)
         # Items recognised only in a lower-weight (oblique) view: take their
         # geometry from the best view's depth, around where they were found.
         k_best = int(np.argmax(weights))
@@ -215,6 +199,42 @@ class ScenePerception:
         return new
 
 
+def model_mask(frame, model, placement):
+    """The pixels of `frame` that the item's model, resting as `placement`,
+    covers (its collision shapes' silhouettes; what hides it is ignored)."""
+    import math
+    from ..planning.placement import placement_pose
+    from ..transforms import rpy_to_matrix
+    H, W = frame.depth.shape
+    mask = np.zeros((H, W), np.uint8)
+    xyz, R = placement_pose(model, placement)
+    for sh in model.shapes:
+        if sh.kind == "box":
+            g = np.array([[i, j, k] for i in (-1, 1) for j in (-1, 1) for k in (-1, 1)], float) / 2
+            local = g * np.array(sh.size)
+        else:
+            r, h = sh.size
+            a = np.linspace(0, 2 * math.pi, 32, endpoint=False)
+            ring = np.c_[r * np.cos(a), r * np.sin(a)]
+            local = np.vstack([np.c_[ring, np.full(len(a), z)] for z in (-h / 2, h / 2)])
+        P = (local @ rpy_to_matrix(*sh.rpy).T + np.array(sh.xyz)) @ R.T + xyz
+        uv, d = frame.project(P)
+        if np.all(d > 0.01):
+            cv2.fillConvexPoly(mask, cv2.convexHull(uv.astype(np.int32)), 1)
+    return mask > 0
+
+
+def height_image(frame):
+    """World z of every pixel of `frame` (NaN without depth)."""
+    from ..exercise.state_estimation import pixels_to_world
+    H, W = frame.depth.shape
+    vv, uu = np.mgrid[0:H, 0:W]
+    ok = np.isfinite(frame.depth) & (frame.depth > 0)
+    z = np.full((H, W), np.nan)
+    z[ok] = pixels_to_world(uu[ok], vv[ok], frame.depth[ok], frame.K, frame.T_world_cam)[:, 2]
+    return z
+
+
 def largest_cluster(P, cell=0.006):
     """The points of the largest group connected in the horizontal plane
     (items stand at least 2 cm apart, so bits of neighbours fall away)."""
@@ -234,8 +254,8 @@ def largest_cluster(P, cell=0.006):
 
 def _overlap(a, b):
     """Intersection over the smaller mask."""
-    inter = np.logical_and(a, b).sum()
-    return inter / max(1, min(a.sum(), b.sum()))
+    from ..toolkit import mask_overlap
+    return mask_overlap(a, b)
 
 
 def draw(frame, detections, basket_xy=None, title=None):

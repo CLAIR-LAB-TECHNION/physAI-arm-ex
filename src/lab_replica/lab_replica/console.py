@@ -252,7 +252,7 @@ class Robot:
                              f"(run/1_robot.sh {'sim' if sim else 'real'})")
         self._done(f"controller {controller}")
 
-        step("loading SAM 3 (the segmentation model)")
+        step("loading SAM 3 (the segmentation model), starting MoveIt")
         t0 = time.time()
         os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
         os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
@@ -409,6 +409,10 @@ class Robot:
     def shutdown(self):
         try:
             self.node.cancel_active()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            self.ex.mv.stop()       # the move_group this console started, if any
         except Exception:  # noqa: BLE001
             pass
         if self.viewer is not None:

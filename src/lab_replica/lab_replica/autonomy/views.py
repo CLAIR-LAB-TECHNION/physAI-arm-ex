@@ -4,6 +4,10 @@ A view is the camera at `eye` looking at `target`, with the world direction
 `up` pointing up in the image. The arm pose for it follows from the
 hand-eye transform (rg6_base_link -> colour optical frame, from the robot
 description), by inverse kinematics.
+
+The actions move to views with the exercise's plan_view (MoveIt); the
+ViewPlanner here (the earlier collision-checked motions) is still used by
+tools/calibrate_wrist_camera.py.
 """
 
 import math
@@ -39,6 +43,14 @@ def view_from_config(v):
 def down_view(x, y, height, up=(0.0, -1.0, 0.0)):
     """Camera straight above (x, y), `height` above the table, looking down."""
     return look_at((x, y, height), (x, y, 0.0), up)
+
+
+def hand_eye(ur_type):
+    """The camera's optical frame in the frame of rg6_base_link (4x4), from
+    the robot description (cell.yaml wrist_camera)."""
+    urdf = robot_urdf(ur_type)
+    q = np.zeros(6)
+    return inv_tf(Chain(urdf, "world", "rg6_base_link").fk(q)) @ Chain(urdf, "world", OPTICAL_FRAME).fk(q)
 
 
 class ViewPlanner:

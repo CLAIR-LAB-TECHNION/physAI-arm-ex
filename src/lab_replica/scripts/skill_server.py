@@ -92,6 +92,7 @@ def main():
     except KeyboardInterrupt:
         worker.cancel_active()
     finally:
+        executive.mv.stop()
         rclpy.try_shutdown()
 
 

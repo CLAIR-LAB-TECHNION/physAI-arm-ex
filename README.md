@@ -12,9 +12,14 @@ tell it what to do in one of two ways:
   the other.
 
 Either way the robot works out the details itself. It looks with the wrist
-camera, recognises the items (SAM 3), plans a collision-free motion and
-moves. The same programs run the real robot and a Gazebo simulation of the
-cell.
+camera, recognises the items (SAM 3), finds a grasp, plans a collision-free
+motion (MoveIt) and moves. The same programs run the real robot and a Gazebo
+simulation of the cell.
+
+The task planning, the state estimation and the motion planning are in one
+folder of plain Python, without ROS:
+[`src/lab_replica/lab_replica/exercise/`](src/lab_replica/lab_replica/exercise/)
+([The exercise](#the-exercise-task-planning-state-estimation-motion-planning)).
 
 Repository: <https://github.com/guyazran/physAI-arm-ex> (it continues the
 earlier `lab-tamp` workspace; see [Reference](#reference)).
@@ -22,17 +27,19 @@ earlier `lab-tamp` workspace; see [Reference](#reference)).
 **Contents**
 
 1. [Run it: four scripts](#run-it-four-scripts)
-2. [Build (once)](#build-once)
-3. [Run it in simulation](#run-it-in-simulation)
-4. [Run it on the real robot](#run-it-on-the-real-robot): the
+2. [The exercise](#the-exercise-task-planning-state-estimation-motion-planning):
+   task planning, state estimation, motion planning
+3. [Build (once)](#build-once)
+4. [Run it in simulation](#run-it-in-simulation)
+5. [Run it on the real robot](#run-it-on-the-real-robot): the
    [UR driver](#1-the-ur-driver-on-air),
    [the RealSense](#2-the-realsense-on-guest) and
    [the RG6 driver](#3-the-rg6-gripper-driver-on-air)
-5. [The action console](#the-action-console)
-6. [The goal console](#the-goal-console)
-7. [What the robot keeps clear of](#what-the-robot-keeps-clear-of)
-8. [Watching it, and when something goes wrong](#watching-it-and-when-something-goes-wrong)
-9. [Reference](#reference): how the skills work, `solve.py`, the
+6. [The action console](#the-action-console)
+7. [The goal console](#the-goal-console)
+8. [What the robot keeps clear of](#what-the-robot-keeps-clear-of)
+9. [Watching it, and when something goes wrong](#watching-it-and-when-something-goes-wrong)
+10. [Reference](#reference): how the skills work, `solve.py`, the
    measurements, the simulation, where everything is
 
 ---
@@ -66,6 +73,74 @@ argument always says where to run: **`sim`** (the Gazebo simulation) or
 * How the scripts were tested (simulation, and the real-robot mode without
   the robot): [verification/README.md](verification/README.md#2026-10-14-the-consoles-and-the-depth-obstacle-model).
 
+## The exercise: task planning, state estimation, motion planning
+
+Everything the robot decides is in
+[`src/lab_replica/lab_replica/exercise/`](src/lab_replica/lab_replica/exercise/).
+These files are plain Python: no ROS. The rest of the code (the consoles,
+the camera, SAM 3, MoveIt's `move_group`, the drivers) calls them, so a
+change there shows up the next time a console runs, in simulation or on the
+robot (after `colcon build`, which `run/0_setup.sh` did; the files are
+linked, so editing them needs no new build).
+
+| File | Function | What it does | Called by |
+|---|---|---|---|
+| `task_planning/domain.pddl` | | the PDDL domain: the actions' preconditions and effects (their names and parameters are fixed: the robot runs exactly these) | |
+| `task_planning/planning.py` | `problem_pddl` | the PDDL problem text: the items, the initial state, the goal | the goal console, `solve.py` |
+| | `load_problem` | the domain and the problem read by UPF (`PDDLReader`) | |
+| | `solve` | the plan: UPF's `OneshotPlanner(name="fast-downward")` | |
+| | `expected_states`, `facts_of` | the state after each action (UPF's `SequentialSimulator`) | |
+| | `execute_plan` | the robot performs the actions one by one, stopping at the first failure | the goal console |
+| `state_estimation.py` | `pixels_to_world` | depth pixels to 3D points in the world frame (pinhole camera) | every look |
+| | `estimate_placement` | an item's 3D points to where and how it rests (support, resting pose, x, y, yaw) | every look |
+| | `assign_masks` | SAM 3's masks in one image to at most one per item | every look |
+| | `fuse_views` | the items found in several images to one estimate per item | every look |
+| | `grasp_in_image` | top-down grasps proposed in the image: a pixel and a closing direction | `(pick-up X)` |
+| | `grasp_pose` | a grasp in the image to the gripper's 3D pose and opening | `(pick-up X)` |
+| `motion_planning.py` | `choose_solution` | of the inverse kinematics solutions, the nearest to the arm's configuration | every motion |
+| | `camera_to_gripper`, `held_box` | frames: the gripper pose for a camera pose; the held item's box in the gripper's frame | |
+| | `joint_line`, `straight_path`, `plan_path` | the straight line in joint space when nothing is in its way; else straight up first, then the line; else MoveIt's planner | every motion |
+| | `move_to_pose`, `plan_view`, `plan_home` | collision-free motions to a gripper pose, a camera view, home | every look, the way home |
+| | `plan_pick` | above the grasp, open, straight down, close, straight up | `(pick-up X)` |
+| | `plan_place` | carry, straight down, open, straight up | `(put-on-table X)`, `(put-in-basket X)` |
+| | `sample_spots`, `is_free`, `find_table_spot` | where on the table an item can be put | `(put-on-table X)` |
+| | `scene_obstacles` | what MoveIt keeps clear of besides the table and the wall | every motion |
+
+What these files may use from the rest of the code is in two files:
+
+* [`lab_replica/toolkit.py`](src/lab_replica/lab_replica/toolkit.py): the
+  data types (`Placement`, `Estimate`, `Detection`, `ImageGrasp`, `Grasp`,
+  `Held`, `Box`), small geometric fits, the robot's kinematics (`ik_all`,
+  `fk`, `joint_limits`, the RG6's `depth_from_width` and `free_height`) and
+  the steps of a robot plan (`trajectory`, `gripper_step`).
+* [`lab_replica/moveit_client.py`](src/lab_replica/lab_replica/moveit_client.py):
+  MoveIt without ROS: `plan_to_joints`, `plan_to_pose`, `cartesian_path`,
+  `is_valid`, `set_obstacles`. Poses are 4x4 numpy matrices of the gripper's
+  mounting face (`rg6_base_link`) in the world frame; joint paths are lists
+  of the six joint angles.
+
+**Checking the exercise offline** (no robot, no simulation, no MoveIt), in
+the clone's top directory: each function is compared with cases whose answer
+is known (a synthetic depth image of a block and a can seen from above,
+goals with known plans, arm configurations):
+
+```console
+source /opt/ros/humble/setup.bash && source install/setup.bash && source .venv/bin/activate
+python3 src/lab_replica/tools/check_exercise.py            # or: ... check_exercise.py task state motion
+```
+
+The motions themselves need MoveIt: try them in simulation
+([Run it in simulation](#run-it-in-simulation)).
+
+**MoveIt** runs as `move_group`, started by the console (or the skill
+server) when none is running, with the robot model of
+`description/urdf/lab_robot.urdf.xacro` and `config/moveit/`
+(`lab_robot.srdf`: the planning group `arm` from `base_link` to
+`rg6_base_link`; OMPL's RRT-Connect; KDL inverse kinematics). Its log is
+`~/.ros/lab_move_group.log`. It only plans: the console executes the
+trajectories, timed by `toolkit.trajectory`. To start it by hand (e.g. with
+RViz): `ros2 launch lab_replica moveit.launch.py rviz:=true`.
+
 ## Build (once)
 
 On the lab PC this is done. On another computer that runs the consoles
@@ -75,7 +150,9 @@ On the lab PC this is done. On another computer that runs the consoles
 
 ```console
 sudo apt install ros-humble-control-msgs ros-humble-controller-manager-msgs ros-humble-xacro \
-                 ros-humble-ur-description python3.10-venv python3-colcon-common-extensions
+                 ros-humble-ur-description python3.10-venv python3-colcon-common-extensions \
+                 ros-humble-moveit-ros-move-group ros-humble-moveit-planners-ompl \
+                 ros-humble-moveit-kinematics ros-humble-moveit-simple-controller-manager
 ```
 
 Then, as any user:
@@ -416,7 +493,7 @@ show the command, and an action with an unknown item suggests it.
 
 **An added item is temporary.** It lasts until the console quits and is not
 written anywhere: the next console starts with the twelve items again.
-`config/domain.pddl` and the problem files are unchanged. In the goal
+The domain (`exercise/task_planning/domain.pddl`) and the problem files are unchanged. In the goal
 console an added item is also an object of the planning problem for the
 rest of the session ([The goal console](#the-goal-console)). Quitting while
 the gripper holds an added item asks first (quit again to leave it in the
@@ -554,54 +631,36 @@ and the same options as the action console.
 
 ## What the robot keeps clear of
 
-The motion planner does **not** use the items' 3D models as obstacles. The
-robot only estimates an item's place from above (position, rotation, which
-side it rests on), and the real item may be a little elsewhere, lean
-against something, or have a part the model lacks. So every motion keeps
-clear of **what the camera actually measured**:
+Every motion is planned by MoveIt (`exercise/motion_planning.py`), which
+keeps the robot, and the item in its gripper, clear of what is in its
+planning scene:
 
-* Each look turns the depth image into a **height map** of the table (2.5 mm
-  cells). Each cell is an obstacle from the table up to the highest point
-  seen there.
-* Space the camera **could not see** counts as occupied. This includes the
-  space behind tall items, outside the image, and holes in the depth.
-  It is filled up to the lowest height at which a camera ray passed through
-  it (rays only pass through empty space, and things stand on the table).
-  Where no ray passed, it is filled up to 30 cm (`max_item_height` in
-  [`config/perception.yaml`](src/lab_replica/config/perception.yaml)).
-* The robot itself, the item in its gripper and the basket's wall are taken
-  out of the depth. The table, the basket and the wall behind the table
-  (`room.wall_y` in `cell.yaml`, kept 3 cm clear) are the only modelled
-  obstacles.
-* The item models are still used to choose where to grasp an item and where
-  an item fits. They also label the cells of each item: the fingers may
-  touch the item being picked up, and its cells are dropped once it is in
-  the gripper. **Everything else the camera saw is an obstacle**, whether it
-  was recognised or not.
-* Two exceptions, because the camera cannot see these items: the item **in
-  the gripper** is checked as its model's box, held where it was grasped;
-  and an item **just put down** is checked as its model's box until the
-  next look.
-* With an item in the gripper, the camera views are taken up to 6 cm
-  higher, until the item hangs at least 3 cm above the 30 cm that unseen
-  space is filled up to. (This mattered when the camera was thought to be
-  tilted 30 degrees, so the gripper leaned to look down; the calibrated
-  camera looks along the gripper axis, but tilted views such as the
-  recognition view still lean it.)
+* **always:** the table top and the wall behind the table (`room.wall_y` in
+  `cell.yaml`), and the robot itself;
+* **what `scene_obstacles` adds** for each action, from the last look: a box
+  around every recognised item (its estimated model, 5 mm larger on every
+  side; not the item being picked up, nor the one in the gripper), the
+  basket (a box around it up to its rim), every unknown obstacle the depth
+  camera saw (depth no recognised item explains), and the space the camera
+  could not see (behind a tall item, which may be an item SAM 3 missed), up
+  to the height the camera's rays bound it to;
+* **the item in the gripper:** its model's box, held where it was grasped
+  (`held_box`), moves with the gripper.
 
-Each look saves a top view of this map in the run directory (below). Here
-the robot is holding the red can. Grey cells are what the camera saw (darker
-= higher), purple cells were not seen (shadows behind tall items, strips
-outside the view), and the coloured outlines are the recognised items:
+The straight moves down to a grasp or a place and back up are MoveIt's
+Cartesian paths, checked against the same scene: the fingers may not touch
+a neighbouring item on the way down. Each look still turns the depth into a
+height map of the table (`autonomy/depth_world.py`, 2.5 mm cells; space the
+camera could not see counts as occupied), which finds the unknown obstacles,
+chooses the drop spot in the basket, and limits where an item may be put on
+the table (only where the camera's views cover it, so that it can be seen,
+and picked up, again). Each look saves a top view of this map in the run
+directory. Here the robot is holding the red can. Grey cells are what the
+camera saw (darker = higher), purple cells were not seen (shadows behind tall
+items, strips outside the view), and the coloured outlines are the recognised
+items:
 
 ![depth map](docs/depth_map_example.png)
-
-This is more cautious than planning around models. A grasp that needs the
-fingers to fit into a narrow gap between items can be refused, and an item
-is put down away from places the camera could not see. And whatever really
-is in the way blocks the robot: for example the spray bottle, dropped into
-the basket, can land leaning over the rim towards the robot, and the robot
-then refuses motions that would pass there until it is set upright.
 
 ## Watching it, and when something goes wrong
 
@@ -635,7 +694,9 @@ then refuses motions that would pass there until it is set upright.
 | `No RealSense devices were found!` (terminal 2) | the camera is not plugged in, or not into a USB 3 port; replug it, then restart terminal 2 |
 | `invalid action string: ...`, `invalid goal: ...` | a typo: the message says what is wrong |
 | `action failed: X not found` | SAM 3 did not recognise X (e.g. hidden behind a taller item); look at the camera view in the run directory; the prompts are in `config/perception.yaml` |
-| `action failed: cannot pick X: ... hits Y` | no collision-free grasp, given what the camera saw; look at the depth map; move items a little apart |
+| `action failed: cannot pick: MoveIt's Cartesian path gets only N% of the way` | the fingers would touch a neighbouring item on the way down, for every grasp tried; move items a little apart |
+| `... is out of the arm's reach` | the pose is too far from the robot's base (a tall item held high over the far side of the basket); move the basket closer |
+| `MoveIt is not running`, `move_group did not come up` | see `~/.ros/lab_move_group.log` |
 | `action failed: not applicable: the gripper is empty` (or `... is holding ...`) | the gripper sensor says the action is not possible now |
 | `the goal cannot be reached from this state` | items never leave the basket, and the gripper holds one item at most |
 
@@ -757,7 +818,7 @@ A task directory (`problems_tamp/<name>/`):
 
 | File | |
 |---|---|
-| `problem.pddl`, `domain.pddl` | the task as PDDL: the twelve items, the scene's initial state, the goal; the domain (always config/domain.pddl) |
+| `problem.pddl`, `domain.pddl` | the task as PDDL: the twelve items, the scene's initial state, the goal; the domain (always exercise/task_planning/domain.pddl) |
 | `plan.txt`, `planner.log` | the plan and the planner's output |
 | `world.sdf`, `layout.yaml`, `layout.png`, `render.png` | the scene: the Gazebo world, where every item stands (and the init, goal, plan), a top view, the lab camera's view |
 | `README.md` | the task, the plan, the commands, where to put the items on the real table |
@@ -778,11 +839,12 @@ same layout.
  afterwards (simulation): the true state from Gazebo ──► does the goal hold?
 ```
 
-* **Task planning** (`lab_replica/tamp/planner.py`): the domain is read
-  from `config/domain.pddl` with UPF's `PDDLReader`; each problem is built
-  in UPF from it (the twelve items as objects, the initial state, the goal
-  formula as a UPF expression) and solved with
-  `OneshotPlanner(name="fast-downward")`. That is Fast Downward's LAMA
+* **Task planning** (`exercise/task_planning/planning.py`, called by
+  `lab_replica/tamp/task.py`): the problem is written as PDDL text (the items
+  as objects, the initial state, the goal formula), read together with
+  `exercise/task_planning/domain.pddl` by UPF's `PDDLReader`, and solved with
+  `OneshotPlanner(name="fast-downward")`; UPF's `SequentialSimulator` gives
+  the state each action should produce. That is Fast Downward's LAMA
   (first iteration): satisficing, so a plan is not guaranteed to be the
   shortest, though in this small domain it usually is. UPF compiles
   disjunctions and quantifiers in the goal away; a plan takes well under a
@@ -932,7 +994,7 @@ frames).
  close look at the target (pick-up only) ─────────────────────────────────────────┤
  depth not explained by any item ──► unknown obstacles ───────────────────────────┤
                                                                                   ▼
-                     collision-checked grasp / placement (planning/skills.py) ──► arm + gripper ──► grip check
+   grasp proposed in the close look's image ──► 3D grasp ──► MoveIt plans ──► arm + gripper ──► grip check
 ```
 
 * **Camera.** The RealSense sits at the wrist, level with the joint between
@@ -966,11 +1028,10 @@ frames).
   depth around the body); the spray bottle by its trigger head (grasped) and
   its nozzle side from the body. In simulation: 0.1-2 mm and under 1 deg from
   the straight-down view.
-* **Obstacles: what the camera saw.** The motions keep clear of the depth
-  seen, not of the item models (see
-  [What the robot keeps clear of](#what-the-robot-keeps-clear-of); code:
-  `autonomy/depth_world.py`). An item SAM 3 missed is avoided like any other,
-  and nothing is put down on it. A put on the table only uses spots that the
+* **Obstacles: what the camera saw.** Depth that no recognised item explains
+  is an unknown obstacle (`autonomy/depth_world.py`): MoveIt avoids it, and
+  nothing is put down on it (see
+  [What the robot keeps clear of](#what-the-robot-keeps-clear-of)). A put on the table only uses spots that the
   camera's view covers up to the item's top, so that the item can be seen,
   and picked up, again.
 * **Dropping into the basket.** The depth inside the basket becomes a height
@@ -983,13 +1044,26 @@ frames).
   blocked, the next best spots are tried. A drop can tip or bounce items,
   which is intended: the state after a put-in-basket is for perception to
   find out.
-* **Motion.** The collision-checked top-down grasps and placements of
-  lab-replica (planning/skills.py), now fed with the perceived scene, and
-  with the depth map as the obstacles (`autonomy/obstacles.py`
-  `PerceivedSkills`). Changed for this: a held item moves rigidly with the
-  gripper (it leans when the gripper leans for a camera view), its box is
-  checked with 45 points instead of 12, and it may only go below the basket
-  rim over the basket when it is being put in (or picked from) the basket.
+* **Grasp.** Proposed in a top-down image, the close look (else the top
+  view): the item's pixels are its SAM 3 mask joined with the silhouette of
+  its estimated model (SAM 3 may miss a part, e.g. the spray bottle's head).
+  The fingers close on the top of the item (the pixels nearest to the
+  camera): across the narrow side of an elongated top, across either pair of
+  sides of a square one, and in any direction around a round one (first
+  across the whole mask's narrow side, which keeps them off the mug's
+  handle). Each proposal goes back into the world with the depth: the
+  closing direction, the width between the pads, and the fingertips' height
+  (as deep as the RG6's knuckles allow above the item's top, at least 8 mm
+  above the table) (`exercise/state_estimation.py`).
+* **Motion.** To the inverse kinematics solution nearest to the arm's
+  configuration: the straight line in joint space when nothing is in its
+  way (checked by MoveIt); else straight up first, then that line; else
+  MoveIt's planner (OMPL's RRT-Connect); and
+  MoveIt's Cartesian paths for the straight moves down and up
+  (`exercise/motion_planning.py`); see
+  [What the robot keeps clear of](#what-the-robot-keeps-clear-of). A held
+  item moves rigidly with the gripper (it leans when the gripper leans for a
+  camera view).
 
 Code: `lab_replica/perception/` (camera, SAM 3, pose fitting, scene),
 `lab_replica/autonomy/` (the executive, camera views, unknown obstacles),
@@ -1013,11 +1087,12 @@ Made so that the simulation and the real robot differ as little as possible:
 * The twelve items are the known ones of items.yaml, resting in one of their
   stable poses, at least 2 cm apart (as the generator makes them). An item
   leaning on another (e.g. in the basket) is not given a pose: it is an
-  unknown obstacle. The item models are used to find grasps and free spots,
-  never as obstacles.
+  unknown obstacle. The item models give the boxes MoveIt keeps clear of,
+  the free spots on the table, and the item's pixels for a grasp (with its
+  SAM 3 mask).
 * Things stand on the table (or in the basket): the space above a measured
   surface, or above a height where a camera ray passed, is empty.
-* Grasps are top-down, as in lab-replica.
+* Grasps are top-down, proposed in a top-down image.
 
 ### A.5 On the real robot
 
@@ -1309,8 +1384,13 @@ physAI-arm-ex/
       perception.yaml      wrist camera topics, survey views, SAM 3 prompts and thresholds
       real_robot.yaml      robot IP and driver settings
       controllers.yaml     ros2_control controllers of the simulation
-      domain.pddl          the lab's PDDL domain (unchanged)
+      domain.pddl          the lab's PDDL domain (the planner uses exercise/task_planning/domain.pddl)
+      moveit/              MoveIt: lab_robot.srdf (planning group, collision pairs), kinematics, OMPL, limits
     lab_replica/           the Python library
+      exercise/            THE EXERCISE (no ROS): task_planning/ (domain.pddl, planning.py),
+                           state_estimation.py, motion_planning.py
+      toolkit.py           what the exercise may use: data types, fits, kinematics, plan steps
+      moveit_client.py     MoveIt (move_group's services) without ROS in its interface
       objects/             one file per physical object: can.py, spray_bottle.py, tape_roll.py,
                            cup.py, mug.py, block.py, basket.py, table.py, room.py, camera.py
       robot/               UR kinematics, RG6 linkage, robot collision points, the RG6 ROS driver
@@ -1319,13 +1399,14 @@ physAI-arm-ex/
       execution/           running a solution through ROS (runner, executor, goal check)
       perception/          wrist RealSense frames, SAM 3, item pose fitting, scene (section A.3)
       autonomy/            executing PDDL actions on demand: executive.py, camera views,
-                           depth_world.py (what the motions keep clear of), obstacles.py (the planner on it)
+                           depth_world.py (the depth seen: unknown obstacles, drop spots), annotate.py
       console.py           the action and goal consoles (prompt, start-up checks, running an action)
-      tamp/                solving a goal: goal formulas, UPF + Fast Downward, tasks, plan execution (section T.3)
+      tamp/                solving a goal: goal formulas, tasks, plan execution (section T.3; the planning is in exercise/)
       gazebo/              writing models and worlds, headless Gazebo runs
     launch/
       sim.launch.py        the simulated cell
       real.launch.py       the real cell (ur_robot_driver + RG6 driver)
+      moveit.launch.py     MoveIt's move_group (started by the consoles)
       camera.launch.py     the wrist camera: the RealSense driver, or (sim:=true) the simulated one
     scripts/               the `ros2 run lab_replica ...` commands (below)
     tools/                 development and calibration tools (below)

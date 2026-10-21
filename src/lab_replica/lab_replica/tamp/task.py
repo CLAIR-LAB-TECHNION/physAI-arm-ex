@@ -4,8 +4,8 @@ user's goal, written as a PDDL problem over the fixed domain and objects.
 A task directory (problems_tamp/<name>/) holds
 
     problem.pddl   the twelve items, the scene's initial state, the goal
-    domain.pddl    config/domain.pddl (always the same)
-    plan.txt       the plan (UPF + Fast Downward);  planner.log  its output
+    domain.pddl    exercise/task_planning/domain.pddl (always the same)
+    plan.txt       the plan (UPF + Fast Downward);  planner.log  its errors
     layout.yaml    where every item stands (with the init, goal and plan)
     layout.png     top view of the layout;  render.png  the lab camera's view
     world.sdf      the Gazebo world of the scene (items at their settled poses)
@@ -27,6 +27,7 @@ import yaml
 
 from .. import config
 from ..planning import pddl
+from ..exercise.task_planning import planning as tp
 from . import planner
 from .goal import to_text
 
@@ -56,20 +57,51 @@ def scene_dir(name_or_path):
     return d
 
 
+class Plan(list):
+    """A plan: its actions as text, e.g. ['(pick-up red-can)', ...], with
+    .states, the state each action should produce (the exercise's
+    expected_states, simulated by UPF)."""
+
+    def __init__(self, actions, states):
+        super().__init__(actions)
+        self.states = list(states)
+
+
 def problem_text(init, formula, name, items=pddl.ITEMS):
-    return pddl.problem_text(init, (), items=items, name=name, goal_formula=to_text(formula))
+    """The PDDL problem (exercise/task_planning/planning.py problem_pddl)."""
+    return tp.problem_pddl(list(items), init, to_text(formula), name=name)
 
 
 def solve(init, formula, out_dir=None, log=print, time_limit=60, items=pddl.ITEMS):
-    """The plan from `init` to the goal: a UPF problem over `items` solved by
-    Fast Downward (planner.py; raises planner.Unsolvable). With out_dir,
-    problem.pddl, plan.txt and planner.log are written there."""
-    name = os.path.basename(out_dir.rstrip("/")) if out_dir else "task"
+    """The plan from `init` to the goal over `items` (a Plan), with the
+    exercise's task planner (exercise/task_planning: the problem text, UPF,
+    Fast Downward, the expected states). Raises planner.Unsolvable. With
+    out_dir, problem.pddl, plan.txt and planner.log are written there."""
+    planner.check()
+    name = (os.path.basename(out_dir.rstrip("/")) if out_dir else "") or "task"
+    text = problem_text(init, formula, name, items)
     if out_dir:
         with open(os.path.join(out_dir, "problem.pddl"), "w") as f:
-            f.write(problem_text(init, formula, name, items))
-    problem = planner.make_problem(init, formula, name=name.replace("-", "_") or "task", items=items)
-    return planner.plan(problem, out_dir=out_dir, time_limit=time_limit)
+            f.write(text)
+    try:
+        problem = tp.load_problem(text)
+        actions = tp.solve(problem, time_limit=time_limit)
+        states = tp.expected_states(problem, actions)
+    except planner.PlannerError as e:
+        if out_dir:
+            with open(os.path.join(out_dir, "planner.log"), "a") as f:
+                f.write(f"{type(e).__name__}: {e}\n")
+        raise
+    except Exception as e:  # noqa: BLE001  (UPF's own errors: a bad domain or problem text)
+        if out_dir:
+            with open(os.path.join(out_dir, "planner.log"), "a") as f:
+                f.write(f"{type(e).__name__}: {e}\n")
+        raise planner.PlannerError(f"{type(e).__name__}: {e}") from e
+    plan = Plan([planner.action_text(a) for a in actions], states)
+    if out_dir:
+        with open(os.path.join(out_dir, "plan.txt"), "w") as f:
+            f.write("".join(a + "\n" for a in plan) + f"; cost = {len(plan)} (unit cost)\n")
+    return plan
 
 
 def reachable(init, formula, items=pddl.ITEMS):
@@ -158,7 +190,7 @@ def write_task(out_dir, init, formula, plan, source):
     name = os.path.basename(out_dir.rstrip("/"))
     with open(os.path.join(out_dir, "problem.pddl"), "w") as f:
         f.write(problem_text(init, formula, name))
-    shutil.copy(config.path("config", "domain.pddl"), os.path.join(out_dir, "domain.pddl"))
+    shutil.copy(tp.DOMAIN_FILE, os.path.join(out_dir, "domain.pddl"))
     lp = os.path.join(out_dir, "layout.yaml")
     layout = _read_yaml(lp)
     layout.update(name=name, init=sorted(pddl.fact_str(f) for f in init), goal=to_text(formula),

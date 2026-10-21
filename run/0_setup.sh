@@ -31,6 +31,10 @@ APT_PACKAGES=(
     ros-humble-controller-manager-msgs  # which arm controller is active
     ros-humble-xacro                    # the robot model (camera pose, motion planning)
     ros-humble-ur-description           # the UR5e in that model
+    ros-humble-moveit-ros-move-group    # MoveIt: motion planning (move_group)
+    ros-humble-moveit-planners-ompl     # MoveIt: its planners (RRT-Connect)
+    ros-humble-moveit-kinematics        # MoveIt: inverse kinematics (KDL)
+    ros-humble-moveit-simple-controller-manager  # MoveIt: loaded by move_group (it executes nothing here)
     python3.10-venv                     # python3 -m venv
     python3-colcon-common-extensions    # colcon build
 )

@@ -13,11 +13,12 @@
 
 "Empty" and "holding" come from the gripper (the RG6's grip-detected flag);
 nothing else of the PDDL state is assumed. Everything about the scene comes
-from the wrist camera: item poses (perception/: where to grasp, which item
-is which), the basket, and the depth seen (depth_world.py), which is what the
-motions keep clear of: the item models are not obstacles. The motions are the
-collision-checked pick-and-place plans of planning/skills.py, made from the
-perceived scene instead of a known layout.
+from the wrist camera: item poses (perception/ with the exercise's
+state_estimation.py: which item is which, where it rests), the basket, the
+depth seen (depth_world.py), and the grasp (state_estimation.py: proposed in
+the image, then turned into a 3D gripper pose). The motions are the
+exercise's (motion_planning.py), planned by MoveIt (moveit_client.py) with
+the table, the wall and what the camera saw in its planning scene.
 
 The same code runs in simulation and on the real robot; it talks to the arm
 and gripper through execution.executor.Executor and to the camera through
@@ -35,21 +36,24 @@ import rclpy
 from std_msgs.msg import Bool, Float64, String
 
 from .. import config, objects
+from ..exercise import motion_planning as mp
+from ..exercise import state_estimation as se
+from ..moveit_client import MoveIt
 from ..perception.rgbd import RGBDCamera
 from ..perception.scene import ScenePerception, load_perception_config
 from ..planning.motion import PlanError
 from ..planning.placement import Placement
 from ..planning.skills import Held
 from ..robot import rg6
+from ..toolkit import box_in_world, fk
 from ..transforms import inv_tf, wrap
 from . import annotate
 from .depth_world import DepthWorld
 from .drop import drop_spots, spread
-from .obstacles import PerceivedSkills
-from .views import ViewPlanner, down_view, view_from_config
+from .views import down_view, hand_eye, view_from_config
 
 ACTIONS = ("pick-up", "put-in-basket", "put-on-table")
-HELD_VIEW_CLEAR = 0.03   # a view raises a held item this far above max_item_height (views.above_held)
+DROP_CLEARANCE = 0.02    # dropping into the basket: the item's bottom this far above the rim or the pile
 
 
 class ActionError(RuntimeError):
@@ -87,7 +91,14 @@ class ActionExecutive:
         ur_type = self.cell["robot"]["ur_type"]
         self.cam = RGBDCamera(node, ur_type, self.cfg["topics"])
         self.perception = perception or ScenePerception(self.cell, self.items, self.basket, cfg=self.cfg)
-        self.views = ViewPlanner(PerceivedSkills(self.cell, self.items, self.basket), ur_type)
+        self.T_grip_cam = hand_eye(ur_type)
+        self.force = float(self.cell["gripper"]["grip_force"])
+        self.table_z = self.cell["table"]["surface_z"]
+        # MoveIt (move_group): started here unless it runs already.
+        self.mv = MoveIt(node, self.cell, log=log)
+        sim = node.has_parameter("use_sim_time") and node.get_parameter("use_sim_time").value
+        self.mv.start(sim=bool(sim))
+        self.obstacles = []      # the boxes in MoveIt's planning scene besides the table and the wall
         self.grip = {"detected": None, "width": None}
         node.create_subscription(Bool, "/rg6/grip_detected", lambda m: self.grip.__setitem__("detected", m.data), 10)
         node.create_subscription(Float64, "/rg6/width", lambda m: self.grip.__setitem__("width", m.data), 10)
@@ -176,8 +187,26 @@ class ActionExecutive:
     def run(self, steps):
         self.node.run_steps(steps, log=lambda s: self.log(s))
 
-    def traj(self, label, path):
-        return self.views.sk._traj(label, path)
+    def held_box(self, held):
+        """The box of the held item in the gripper's frame (the exercise's held_box), or None."""
+        return None if held is None else mp.held_box(held, self.items[held.item])
+
+    def set_obstacles(self, scene, exclude=(), placed=None):
+        """MoveIt's planning scene: the table and the wall, and the exercise's
+        scene_obstacles for `scene` (none without a scene) without the items
+        in `exclude`; `placed` {item: Placement} are items put down since."""
+        boxes = []
+        if scene is not None:
+            dets = {k: d for k, d in scene.detections.items() if k not in (placed or {})}
+            boxes = mp.scene_obstacles(dets, self.items, self.basket, scene.basket_xy, self.table_z,
+                                       unknown=getattr(scene, "obstacles", ()), exclude=exclude)
+        for k, p in (placed or {}).items():
+            from ..planning.placement import placement_pose
+            from ..robot.collision import Box, object_box
+            b = object_box(self.items[k], *placement_pose(self.items[k], p), k)
+            boxes.append(Box(k, b.c, b.R, b.h + mp.ITEM_PAD))
+        self.mv.set_obstacles(boxes)
+        self.obstacles = boxes
 
     # ---- looking --------------------------------------------------------------------------
 
@@ -195,29 +224,23 @@ class ActionExecutive:
                                 rgb=frame.rgb, depth=frame.depth, K=frame.K, T=frame.T_world_cam, q=q)
         return frame
 
-    def look(self, T_cam, world, held, label, depth=None):
-        """Move the camera to T_cam and take a frame. The motion keeps clear
-        of what the camera saw last (`depth`, default the last scene's;
-        `world` says which of its items are still there), unless that blocks
-        every way: it may have changed since."""
+    def look(self, T_cam, held, label, exclude=()):
+        """Move the camera to T_cam (the exercise's plan_view) and take a
+        frame. The motion keeps clear of what the camera saw last (the last
+        scene, without the items in `exclude`), unless that blocks every way:
+        it may have changed since."""
         q = self.node.current()
-        if depth is None:
-            depth = getattr(self.scene, "depth", None)
-        if held is not None:
-            z_clear = self.cell["table"]["surface_z"] + self.cfg["max_item_height"] + HELD_VIEW_CLEAR
-            T_cam = self.views.above_held(T_cam, held, q, z_clear)
+        box = self.held_box(held)
         try:
-            self.views.sk.depth = depth
-            path = self.views.move_to_view(q, T_cam, world, self.width(), held=held, label=label)
+            self.set_obstacles(self.scene, exclude=exclude)
+            steps = mp.plan_view(self.mv, q, T_cam, self.T_grip_cam, self.width(), box, label)
         except PlanError as e:
-            if depth is None:
+            if not self.obstacles:
                 raise
             self.log(f"  {e}; looking without what was seen before")
-            self.views.sk.depth = None
-            path = self.views.move_to_view(q, T_cam, world, self.width(), held=held, label=label)
-        finally:
-            self.views.sk.depth = None
-        self.run([self.traj(label, path)])
+            self.set_obstacles(None)
+            steps = mp.plan_view(self.mv, q, T_cam, self.T_grip_cam, self.width(), box, label)
+        self.run(steps)
         return self.capture()
 
     def survey(self, exclude=(), held=None, target=None):
@@ -225,13 +248,12 @@ class ActionExecutive:
         well enough from them, also from the recognition views); returns the
         scene (perception.scene.Scene) with .depth (depth_world.DepthWorld)
         and .obstacles (the unrecognised things in it) set."""
-        world = self.scene.world(exclude=exclude) if self.scene else {}
         frames, weights = [], []
 
         def take(views):
             for v in views:
                 self.phase(f"observing: {v.get('name', 'view')} view")
-                frames.append(self.look(view_from_config(v), world, held, f"look ({v.get('name', 'view')})"))
+                frames.append(self.look(view_from_config(v), held, f"look ({v.get('name', 'view')})", exclude))
                 weights.append(float(v.get("weight", 1.0)))
             self.phase("recognising the items (SAM 3)")
             return self.perception.observe(frames, weights, exclude=exclude)
@@ -276,12 +298,13 @@ class ActionExecutive:
         if not cl.get("enabled", False):
             return None
         p = scene.detections[item].estimate.placement
-        frame = self.look_down_at(p.x, p.y, cl["height"], scene.world(), held)
+        frame = self.look_down_at(p.x, p.y, cl["height"], held)
         if frame is None:
             self.log(f"  no close look at {item} possible; using the survey")
             return None
         self.phase(f"recognising {item} from closer")
         sub = self.perception.observe([frame], [float(cl.get("weight", 1.2))], basket_xy=scene.basket_xy)
+        self.close_detection = sub.detections.get(item)
         for it, d in sub.detections.items():
             old = scene.detections.get(it)
             if old is None:
@@ -295,7 +318,7 @@ class ActionExecutive:
         self.publish_detections(frame, scene, "closer look: SAM 3 + depth")
         return frame
 
-    def look_down_at(self, x, y, height, world, held=None):
+    def look_down_at(self, x, y, height, held=None):
         """A frame looking straight down at (x, y) from `height` above the
         table, or None when no such view is reachable."""
         # The camera is beside the gripper: turning the view about the
@@ -303,7 +326,7 @@ class ActionExecutive:
         # put the gripper farthest from the robot's base axis: near the base
         # the arm folds over its own shoulder, low over the table.
         ups = [(math.cos(a), math.sin(a), 0.0) for a in np.arange(8) * math.pi / 4]
-        T_cam_grip = inv_tf(self.views.T_grip_cam)
+        T_cam_grip = inv_tf(self.T_grip_cam)
 
         def grip_r(up):
             T = down_view(x, y, height, up) @ T_cam_grip
@@ -312,15 +335,15 @@ class ActionExecutive:
         ups.sort(key=grip_r)
         for up in ups:
             try:
-                return self.look(down_view(x, y, height, up), world, held, "look closer")
+                return self.look(down_view(x, y, height, up), held, "look closer")
             except PlanError:
                 continue
         return None
 
     def map_depth(self, scene, frames, held=None):
         """scene.depth: the obstacle model from these frames (depth_world.py)."""
-        sk = self.views.sk
-        held_box = (lambda q: sk.held_box(held, sk.P.kin.fk(q))) if held is not None else None
+        box = self.held_box(held)
+        held_box = (lambda q: box_in_world(box, q)) if box is not None else None
         scene.depth_frames = list(frames)
         prior = self.held.depth_before if held is not None and self.held is not None else None
         scene.depth = DepthWorld(frames, self.cell, self.items, self.basket, scene.basket_xy, scene.detections,
@@ -387,10 +410,6 @@ class ActionExecutive:
 
     # ---- planning context -------------------------------------------------------------
 
-    def skills_for(self, scene):
-        return PerceivedSkills(self.cell, self.items, self.basket, basket_xy=scene.basket_xy,
-                               depth=getattr(scene, "depth", None))
-
     def table_region(self, basket_xy, depth=None):
         """Where an item may be put on the table: the placement region of
         cell.yaml, and with `depth` only where the camera's views cover the
@@ -451,32 +470,42 @@ class ActionExecutive:
         scene = self.survey(target=item)
         if item not in scene.detections:
             raise ActionError(f"{item} not found")
+        self.close_detection = None
         close = self.close_look(scene, item)
         p = scene.detections[item].estimate.placement
         self.log(f"  {item}: {p.rest} on the {p.support} at ({p.x:.3f}, {p.y:.3f}), yaw "
                  f"{math.degrees(p.yaw):.0f} deg")
+        # The grasps, proposed in a top-down view: the closer look, else the top view.
+        self.phase(f"finding a grasp of {item}")
+        frame = close if close is not None else self.best_frame(scene)
+        mask = self.grasp_mask(frame, scene, item)
+        image_grasps = se.grasp_in_image(frame, mask)
+        if not image_grasps:
+            raise ActionError(f"no grasp of {item} in the image: too few depth pixels in its mask")
+        grasps = [se.grasp_pose(frame, g, mask, self.table_z) for g in image_grasps]
+        self.show(frame, lambda v: annotate.draw_image_grasp(v, mask, image_grasps, f"grasp {item} in the image"),
+                  f"grasp {item} in the image")
+        g = grasps[0]
+        self.log(f"  {len(grasps)} grasp(s); the first across {g.width * 1000:.0f} mm at ({g.pose[0, 3]:.3f}, "
+                 f"{g.pose[1, 3]:.3f}), fingertips {1000 * (g.tips_z - self.table_z):.0f} mm above the table")
+        grasps = [g for g in grasps if g.width <= rg6.MAX_WIDTH - 0.01]
+        if not grasps:
+            raise ActionError(f"{item} is too wide for the RG6 across every grasp")
         self.phase(f"planning the grasp of {item}")
-        sk = self.skills_for(scene)
-        world = scene.world()
+        self.set_obstacles(scene, exclude=(item,))
         q = self.node.current()
-        pre = self.to_topdown(scene, q, world, self.width())
-        first = [self.traj("level the gripper", pre)]
-        try:
-            steps, q_end, held = sk.plan_pick(pre[-1], item, world, max_candidates=32)
-        except PlanError as e:
-            # From another arm configuration the grasp may be reachable:
-            # try again from home (the generator plans from there).
-            self.log(f"  {e}; trying from home")
-            home_steps, q_home = sk.plan_home(pre[-1], world)
-            steps, q_end, held = sk.plan_pick(q_home, item, world, max_candidates=32)
-            first += home_steps
+        steps, q_end, grasp, T = mp.plan_pick(self.mv, q, grasps, self.force)
+        k = next(k for k, g in enumerate(grasps) if g is grasp)
+        self.log(f"  grasp {k + 1}: across {grasp.width * 1000:.0f} mm, fingertips "
+                 f"{1000 * (grasp.tips_z - self.table_z):.0f} mm above the table")
+        held = self.held_from_grasp(item, p, grasp, T)
         open_w = next(s["width"] for s in steps if s.get("label") == "open")
         self.show(close if close is not None else self.best_frame(scene),
-                  lambda v: annotate.draw_grasp(v, self.items[item], p, held, open_w, sk.force,
+                  lambda v: annotate.draw_grasp(v, self.items[item], p, held, open_w, self.force,
                                                 f"grasp {item}"), f"grasp {item}")
         self.phase(f"picking up {item}")
         try:
-            self.run(first + steps)
+            self.run(steps)
         except Exception as e:
             self.recover(scene)
             raise ActionError(f"grasp failed: {e}")
@@ -489,8 +518,42 @@ class ActionExecutive:
                 self.set_held(None)
                 raise ActionError(f"{item} slipped out of the gripper")
         if self.return_home:
-            self.go_home(sk, {k: v for k, v in world.items() if k != item}, held)
+            self.go_home(held)
         return f"holding {item} (width {self.width() * 1000:.0f} mm)"
+
+    def grasp_mask(self, frame, scene, item):
+        """The pixels of `item` in `frame` for proposing a grasp: its SAM 3
+        mask there joined with the silhouette of its estimated model (SAM 3
+        may miss a part, e.g. the spray bottle's grey head), or without a
+        mask there the silhouette grown by 5 mm (the estimate's error); not
+        within 3 pixels of other items' masks, and only what stands above
+        the table."""
+        from ..perception.scene import height_image, model_mask
+        d = scene.detections[item]
+        m = model_mask(frame, self.items[item], d.estimate.placement)
+        if d.frame is frame:
+            m |= d.mask
+        else:
+            grow = int(round(frame.K[0, 0] * 0.005 / max(0.2, float(np.nanmedian(frame.depth)))))
+            m = cv2.dilate(m.astype(np.uint8), np.ones((2 * grow + 1, 2 * grow + 1), np.uint8)) > 0
+        others = np.zeros(m.shape, np.uint8)
+        for k, o in scene.detections.items():
+            if k != item and o.frame is frame:
+                others |= o.mask.astype(np.uint8)
+        m &= ~(cv2.dilate(others, np.ones((7, 7), np.uint8)) > 0)
+        return m & (height_image(frame) > self.table_z + 0.005)
+
+    def held_from_grasp(self, item, p, grasp, T):
+        """How `item`, resting as placement p, is held after the grasp with
+        the gripper at pose T (planning.skills.Held)."""
+        gx, gy = T[0, 3], T[1, 3]
+        psi = math.atan2(T[1, 0], T[0, 0])
+        c, s = math.cos(p.yaw), math.sin(p.yaw)
+        dx, dy = gx - p.x, gy - p.y
+        offset = (c * dx + s * dy, -s * dx + c * dy)       # in the item's rested frame
+        return Held(item, p.rest, float(grasp.width), float(grasp.tips_z - p.z_support),
+                    (float(offset[0]), float(offset[1])), float(wrap(p.yaw - psi)),
+                    float(self.items[item].poses[p.rest].top))
 
     def put(self, item, support, target_xy=None):
         if not self.holding():
@@ -503,86 +566,88 @@ class ActionExecutive:
         held = self.held.held
         scene = self.survey(exclude=(item,), held=held)
         self.phase(f"planning where to put {item}")
-        sk = self.skills_for(scene)
-        world = scene.world(exclude=(item,))
+        self.set_obstacles(scene, exclude=(item,))
         q = self.node.current()
-        pre = self.to_topdown(scene, q, world, held.width, held=held)
-        try:
-            tgt, steps = self._plan_put(sk, pre[-1], held, world, support, scene, target_xy)
-            first = [self.traj("level the gripper", pre)]
-        except PlanError as e:
-            if "no free spot" in str(e):
-                raise
-            self.log(f"  {e}; trying from home")
-            home_steps, q_home = sk.plan_home(pre[-1], world, held=held)
-            tgt, steps = self._plan_put(sk, q_home, held, world, support, scene, target_xy)
-            first = [self.traj("level the gripper", pre)] + home_steps
+        tgt, steps = self._plan_put(q, held, support, scene, target_xy)
         self.log(f"  putting {item} at ({tgt.x:.3f}, {tgt.y:.3f}) on the {support}")
         self.phase(f"putting {item} {'in the basket' if support == 'basket' else 'on the table'}")
-        self.run(first + steps)
+        self.run(steps)
         self.spin(0.3)
         if self.holding():
             raise ActionError(f"{item} is still in the gripper after release")
         self.set_held(None)
-        world[item] = tgt
         if self.return_home:
-            self.go_home(sk, world, None)
+            self.set_obstacles(scene, exclude=(item,), placed={item: tgt})
+            self.go_home(None)
         return f"put {item} at ({tgt.x:.3f}, {tgt.y:.3f}) on the {support}"
 
-    def _plan_put(self, sk, q0, held, world, support, scene, target_xy):
+    def _plan_put(self, q0, held, support, scene, target_xy):
         """(target placement, steps) for putting the held item down."""
         if support == "basket":
-            return self._plan_drop(sk, q0, held, world, scene)
+            return self._plan_drop(q0, held, scene)
         region = self.table_region(scene.basket_xy, getattr(scene, "depth", None))
         prefer = target_xy if target_xy is not None and len(target_xy) == 2 else (
             (self.held.source.x, self.held.source.y) if self.held.source is not None else (0.45, -0.10))
-        tgt, steps, q_end = sk.find_spot(q0, held, "table", world, region=region, prefer=tuple(prefer),
-                                         max_tries=self.cfg.get("put_max_tries", 80))
-        fp = self.items[held.item].footprint_world(held.rest, tgt.x, tgt.y, tgt.yaw)
+        model = self.items[held.item]
+        # What the item must not be put on: the other items, the unknown things seen.
+        others = [model_fp for k, d in scene.detections.items() if k != held.item
+                  for model_fp in [self.items[k].footprint_world(d.estimate.placement.rest, d.estimate.placement.x,
+                                                                 d.estimate.placement.y, d.estimate.placement.yaw)]]
+        others += [o.polygon for o in getattr(scene, "obstacles", []) if o.support == "table"]
+        tgt, steps = mp.find_table_spot(self.mv, q0, held, model, self.held_box(held), region, others,
+                                        tuple(prefer), self.table_z, self.force,
+                                        margin=self.cell["placement"]["object_clearance"],
+                                        max_tries=self.cfg.get("put_max_tries", 80))
+        fp = model.footprint_world(held.rest, tgt.x, tgt.y, tgt.yaw)
         self.show(self.best_frame(scene),
                   lambda v: annotate.draw_table(v, self.cell, self.items, self.basket, scene, region, fp, tgt,
                                                 self.held.source, held.item, f"put {held.item} here (free spot)"),
                   "put on the table")
         return tgt, steps
 
-    def _plan_drop(self, sk, q0, held, world, scene):
+    def _plan_drop(self, q0, held, scene):
         """Drop the held item above the emptiest spot of the basket (it may
         land on what is there). Only the motion can fail, so the next best
-        spots are tried."""
-        fp = self.items[held.item].poses[held.rest].footprint
+        spots are tried, then higher releases."""
+        model = self.items[held.item]
+        fp = model.poses[held.rest].footprint
         yaws = [wrap(k * math.pi / 4 + held.yaw_rel) for k in range(-4, 4)]
         drops = drop_spots(scene.frames, self.cell, self.basket, scene.basket_xy, fp, yaws,
-                           depth=scene.depth, items=list(world))
-        err = None
-        # The best spots with the yaw that fits there, then any yaw.
-        tries = [(s, [s[3]]) for s in spread(drops.spots)] + [(s, None) for s in spread(drops.spots, 4)]
-        for (cost, x, y, yaw, z_pile), only in tries:
-            try:
-                tgt, steps, _ = sk.plan_drop(q0, held, x, y, z_pile, world, yaws=only)
-            except PlanError as e:
-                err = e
-                continue
-            rel = next(s for s in steps if s.get("label") == "release")
-            fpw = self.items[held.item].footprint_world(held.rest, tgt.x, tgt.y, tgt.yaw)
-            z_drop = tgt.z_support + rel["drop"]
-            pile = z_pile - drops.z_floor
-            self.log(f"  dropping from {z_drop * 100:.0f} cm onto "
-                     + ("the floor" if pile < 0.01 else f"a pile {pile * 100:.0f} cm high"))
-            self.show(self.best_frame(scene),
-                      lambda v: annotate.draw_drop(v, self.basket, scene.basket_xy, self.cell["table"]["surface_z"],
-                                                   drops, fpw, tgt, z_drop, held.item,
-                                                   f"drop {held.item}: emptiest spot"),
-                      "drop in the basket")
-            return tgt, steps
-        raise err or PlanError("no drop spot in the basket")
-
-    def to_topdown(self, scene, q, world, width, held=None):
-        """From a camera view back to a top-down gripper pose, clear of what was seen."""
-        self.views.sk.depth = scene.depth
-        try:
-            return self.views.to_topdown(q, world, width, held=held)
-        finally:
-            self.views.sk.depth = None
+                           depth=scene.depth, items=[k for k in scene.detections if k != held.item])
+        rim = self.table_z + self.basket.height
+        z_floor = self.table_z + self.basket.floor
+        box = self.held_box(held)
+        errors = []
+        # The best spots with the yaw that fits there, then any yaw; then higher.
+        tries = [(s, [s[3]]) for s in spread(drops.spots)] + [(s, yaws) for s in spread(drops.spots, 4)]
+        for raise_ in (0.0, 0.04):
+            for (cost, x, y, yaw0, z_pile), only in tries:
+                z_support = max(z_floor, z_pile)
+                gap = max(rim, z_pile) + DROP_CLEARANCE + raise_ - z_support
+                for yaw in only:
+                    try:
+                        steps = mp.plan_place(self.mv, q0, held, box, x, y, yaw, z_support, gap, self.force,
+                                              approach=mp.DROP_APPROACH)
+                    except PlanError as e:
+                        errors.append(str(e))
+                        continue
+                    tgt = Placement(held.item, held.rest, float(x), float(y), float(yaw), support="basket",
+                                    z_support=float(z_support))
+                    fpw = model.footprint_world(held.rest, tgt.x, tgt.y, tgt.yaw)
+                    z_drop = z_support + gap
+                    pile = z_pile - drops.z_floor
+                    self.log(f"  dropping from {z_drop * 100:.0f} cm onto "
+                             + ("the floor" if pile < 0.01 else f"a pile {pile * 100:.0f} cm high"))
+                    self.show(self.best_frame(scene),
+                              lambda v: annotate.draw_drop(v, self.basket, scene.basket_xy, self.table_z, drops, fpw,
+                                                           tgt, z_drop, held.item,
+                                                           f"drop {held.item}: emptiest spot"),
+                              "drop in the basket")
+                    return tgt, steps
+        if errors and all("out of the arm's reach" in e for e in errors):
+            raise PlanError(f"every drop spot is out of the arm's reach with {held.item} (the basket is too far "
+                            f"for it)")
+        raise PlanError("no drop into the basket: " + ("; ".join(sorted(set(errors))[:3]) or "no drop spot"))
 
     # ---- items added at run time ------------------------------------------------------------
 
@@ -657,7 +722,7 @@ class ActionExecutive:
         self.log(f"  {prompt!r} found with score {score:.2f} at ({c[0]:.3f}, {c[1]:.3f})")
         notes = []
         cl = self.cfg.get("close_look", {})
-        close = self.look_down_at(c[0], c[1], cl.get("height", 0.5), scene.world())
+        close = self.look_down_at(c[0], c[1], cl.get("height", 0.5))
         if close is not None:
             self.phase(f"measuring {name} from closer")
             hit = self._find_new(close, prompt, {}, scene.basket_xy, near=c)
@@ -703,14 +768,17 @@ class ActionExecutive:
                                                          f"green: the model made from it"), f"new item {name}")
         self.log(f"  {name}: {what}; " + "; ".join(notes))
         if self.return_home:
-            self.go_home(self.skills_for(scene), scene.world(), None)
+            self.set_obstacles(scene)
+            self.go_home(None)
         msg = f"{name} is a {what}, SAM 3 score {score:.2f}"
         return spec, msg + "".join(f"\n    note: {n}" for n in notes)
 
-    def go_home(self, sk, world, held):
+    def go_home(self, held):
+        """Back to the home configuration (the exercise's plan_home), keeping
+        clear of what is in MoveIt's planning scene now."""
         self.phase("returning home")
         try:
-            steps, _ = sk.plan_home(self.node.current(), world, held=held)
+            steps = mp.plan_home(self.mv, self.node.current(), self.home, self.width(), self.held_box(held))
             self.run(steps)
         except PlanError as e:
             self.log(f"  no path home ({e}); staying here")
@@ -719,9 +787,12 @@ class ActionExecutive:
         """After a failed grasp: open, rise straight up."""
         self.phase("recovering: open and rise")
         try:
-            self.node.gripper(min(self.width() + 0.03, rg6.MAX_WIDTH), self.views.sk.force, "open")
+            w = min(self.width() + 0.03, rg6.MAX_WIDTH)
+            self.node.gripper(w, self.force, "open")
             q = self.node.current()
-            path = self.views._rise(q, self.views.P.kin.fk(q)[2, 3] + 0.12)
-            self.run([self.views.sk._traj("rise", path, slow=True)])
+            T = fk(q)
+            T[2, 3] += 0.12
+            path = self.mv.cartesian_path(q, [T], w, avoid_collisions=False)
+            self.run([mp.trajectory("rise", path, slow=True)])
         except Exception as e:  # noqa: BLE001
             self.log(f"  recovery failed: {e}")
