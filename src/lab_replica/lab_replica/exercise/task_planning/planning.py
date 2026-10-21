@@ -1,9 +1,10 @@
 """Task planning with the Unified Planning Framework (UPF) and Fast Downward.
 
-The goal console (scripts/goal_console.py) uses these functions in turn:
+The goal console (scripts/goal_console.py) reads problem.pddl, puts in the
+current state and the goal typed (tamp/problem_file.py), then uses these
+functions in turn:
 
-    text     = problem_pddl(items, state, goal)    the PDDL problem
-    problem  = load_problem(text)                  domain.pddl + the problem, read by UPF
+    problem  = load_problem(text)                  domain.pddl + the problem text, read by UPF
     plan     = solve(problem)                      the plan (UPF action instances)
     states   = expected_states(problem, plan)      the state after each action
     execute_plan(state, actions, states, perform)  the robot performs them
@@ -20,25 +21,9 @@ import os
 
 from ...tamp.planner import PlannerError, Unsolvable
 
-DOMAIN_FILE = os.path.join(os.path.dirname(os.path.realpath(__file__)), "domain.pddl")
-
-
-def problem_pddl(items, state, goal, name="task"):
-    """The PDDL problem text for the domain in domain.pddl.
-
-    items  the names of the items (the objects of type item)
-    state  the initial state: a set of facts (see the module docstring)
-    goal   the goal formula as PDDL text, e.g. "(and (in-basket red-can) (robot-gripper-empty))"
-    name   the problem's name
-    """
-    objects = " ".join(items)
-    init = "\n".join("        (" + " ".join(f) + ")" for f in sorted(state))
-    return (f"(define (problem {name})\n"
-            f"    (:domain order-assembly-domain)\n"
-            f"    (:objects {objects} - item)\n"
-            f"    (:init\n{init}\n    )\n"
-            f"    (:goal {goal})\n"
-            f")\n")
+HERE = os.path.dirname(os.path.realpath(__file__))
+DOMAIN_FILE = os.path.join(HERE, "domain.pddl")
+PROBLEM_FILE = os.path.join(HERE, "problem.pddl")
 
 
 def load_problem(problem_text, domain_file=DOMAIN_FILE):

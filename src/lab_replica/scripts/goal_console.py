@@ -8,7 +8,11 @@ Needs the robot (run/1_robot.sh) and the wrist camera (run/2_camera.sh). Loads
 SAM 3 and, once the arm, the gripper and the camera answer, shows the state,
 how to write a goal, and a prompt.
 
-The state starts as: every item on the table, the gripper empty. After each
+The items are the objects of the exercise's problem file
+(src/lab_replica/lab_replica/exercise/task_planning/problem.pddl); each goal
+is planned with that file, its :init replaced by the current state and its
+:goal by the goal typed. The state starts as: every item on the table, the
+gripper empty. After each
 goal it is the state the performed actions should have produced (nothing
 perceives facts such as in-basket); `reset` sets it back to the start. A
 goal is planned from that state, and the plan's actions are performed one by
@@ -40,16 +44,18 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..
 from lab_replica.console import (FORGET_ITEM, NEW_ITEM, PREDICATES, InvalidAction, Robot, Terminal,  # noqa: E402
                                  banner, common_arguments, item_command, item_hints, parse_item_command,
                                  unknown_item_hint, warn_holding_added, wrap_words)
+from lab_replica import objects  # noqa: E402
 from lab_replica.planning import pddl  # noqa: E402
 from lab_replica.tamp import planner, task  # noqa: E402
 from lab_replica.exercise.task_planning import planning as tp  # noqa: E402
 from lab_replica.tamp.goal import CONNECTIVES, GoalError, holds, parse_goal, to_text  # noqa: E402
 
+ITEMS = []      # the objects of the exercise's problem.pddl (read in main)
 
 
 def all_items(robot):
-    """The twelve items and those added in this session (new-item:)."""
-    return list(pddl.ITEMS) + list(robot.added)
+    """The objects of problem.pddl and the items added in this session (new-item:)."""
+    return list(ITEMS) + list(robot.added)
 
 
 def describe(state, items):
@@ -68,7 +74,7 @@ def show_state(term, state, items):
 
 def hints(term, state, added):
     term.say()
-    show_state(term, state, list(pddl.ITEMS) + list(added))
+    show_state(term, state, list(ITEMS) + list(added))
     term.say(term.bold("Goal:    ") + "facts that must all hold at the end, for example")
     term.say("           (in-basket green-mug)")
     term.say("           (in-basket red-can) (robot-gripping green-mug)")
@@ -76,7 +82,7 @@ def hints(term, state, added):
     facts = [f"({p})" if p == "robot-gripper-empty" else f"({p} <item>)" for p in PREDICATES]
     term.say(term.bold("Facts:   ") + "  ".join(facts))
     term.say("         combined with " + ", ".join(CONNECTIVES) + "  (e.g. (not (on-table red-can)))")
-    term.say(term.bold("Items:   ") + wrap_words(pddl.ITEMS + [i + "*" for i in added], 9))
+    term.say(term.bold("Items:   ") + wrap_words(list(ITEMS) + [i + "*" for i in added], 9))
     item_hints(term, added)
     term.say(term.dim("Commands: state (show the state), reset (all items on the table, gripper empty), quit. "
                       "Tab completes names."))
@@ -113,17 +119,21 @@ def main():
     ap.add_argument("--no-window", action="store_true",
                     help="do not open the camera window (live colour and depth, annotated observations)")
     args, _ = ap.parse_known_args()
-    words = list(PREDICATES) + list(CONNECTIVES) + list(pddl.ITEMS) + ["state", "reset", "quit", NEW_ITEM,
-                                                                       FORGET_ITEM]
-    term = Terminal(words, "goals")
-    banner(term, "goal console", args.sim)
     try:
         planner.check()
+        ITEMS[:] = task.default_items()       # the objects of the exercise's problem.pddl
     except planner.PlannerError as e:
         return f"{e}"
+    words = list(PREDICATES) + list(CONNECTIVES) + list(ITEMS) + ["state", "reset", "quit", NEW_ITEM, FORGET_ITEM]
+    term = Terminal(words, "goals")
+    banner(term, "goal console", args.sim)
+    unknown = [i for i in ITEMS if i not in objects.load_items()]
+    if unknown:
+        term.say(term.colour("warning", False) + f": {', '.join(unknown)} in problem.pddl "
+                 "is not an item the robot knows (config/items.yaml): the camera cannot find it")
     robot = Robot(term, sim=args.sim, speed_scale=args.speed_scale, verbose=args.verbose,
                   return_home=not args.no_home, save_frames=args.save_frames, window=not args.no_window)
-    state = task.most_permissive_init()      # every item on the table, gripper empty
+    state = task.most_permissive_init(ITEMS)      # every item on the table, gripper empty
     if robot.holding:
         term.say(term.colour("warning", False) + ": the gripper holds something, but the goal console starts "
                  "from every item on the table and the gripper empty. Take the item out of the gripper "

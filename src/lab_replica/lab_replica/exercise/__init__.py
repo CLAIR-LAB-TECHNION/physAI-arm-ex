@@ -2,7 +2,9 @@
 UR5e + RG6 + wrist RealSense cell. Nothing in here touches ROS.
 
     task_planning/domain.pddl   the PDDL domain (the actions' preconditions and effects)
-    task_planning/planning.py   the problem, UPF + Fast Downward, the expected states, executing a plan
+    task_planning/problem.pddl  the PDDL problem (the objects and a goal; the goal console puts in
+                                the current state and the goal typed)
+    task_planning/planning.py   UPF + Fast Downward, the expected states, executing a plan
     state_estimation.py         pixels -> world points, where each item rests, which mask is which
                                 item, a grasp proposed in the image and its 3D pose
     motion_planning.py          inverse kinematics choice, the held item's box, the motions of the
@@ -14,7 +16,7 @@ What these files may use from the rest of the code is in lab_replica/toolkit.py
 and lab_replica/moveit_client.py (MoveIt, without ROS in its interface).
 
 Who calls what:
-    scripts/goal_console.py, tamp/task.py     -> task_planning/planning.py
+    scripts/goal_console.py, tamp/task.py     -> task_planning/ (tamp/problem_file.py fills problem.pddl)
     perception/rgbd.py, perception/scene.py   -> state_estimation.py (points, placements, masks)
     autonomy/executive.py                     -> state_estimation.py (grasps), motion_planning.py
 """

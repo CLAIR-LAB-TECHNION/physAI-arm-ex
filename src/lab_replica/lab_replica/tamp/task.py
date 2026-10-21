@@ -28,7 +28,7 @@ import yaml
 from .. import config
 from ..planning import pddl
 from ..exercise.task_planning import planning as tp
-from . import planner
+from . import planner, problem_file
 from .goal import to_text
 
 TASKS_DIR = "problems_tamp"
@@ -67,16 +67,23 @@ class Plan(list):
         self.states = list(states)
 
 
-def problem_text(init, formula, name, items=pddl.ITEMS):
-    """The PDDL problem (exercise/task_planning/planning.py problem_pddl)."""
-    return tp.problem_pddl(list(items), init, to_text(formula), name=name)
+def default_items():
+    """The objects of the exercise's problem file (exercise/task_planning/problem.pddl)."""
+    return problem_file.default_objects()
 
 
-def solve(init, formula, out_dir=None, log=print, time_limit=60, items=pddl.ITEMS):
-    """The plan from `init` to the goal over `items` (a Plan), with the
-    exercise's task planner (exercise/task_planning: the problem text, UPF,
-    Fast Downward, the expected states). Raises planner.Unsolvable. With
-    out_dir, problem.pddl, plan.txt and planner.log are written there."""
+def problem_text(init, formula, name, items=None):
+    """The exercise's problem file with `items` (default: its own objects) as
+    the objects, `init` as :init and the goal formula as :goal."""
+    return problem_file.fill(init, to_text(formula), list(items or default_items()), name=name)
+
+
+def solve(init, formula, out_dir=None, log=print, time_limit=60, items=None):
+    """The plan from `init` to the goal over `items` (default: the objects of
+    the exercise's problem.pddl) (a Plan), with the exercise's task planner
+    (exercise/task_planning: the problem file, UPF, Fast Downward, the
+    expected states). Raises planner.Unsolvable. With out_dir, problem.pddl,
+    plan.txt and planner.log are written there."""
     planner.check()
     name = (os.path.basename(out_dir.rstrip("/")) if out_dir else "") or "task"
     text = problem_text(init, formula, name, items)
@@ -104,7 +111,7 @@ def solve(init, formula, out_dir=None, log=print, time_limit=60, items=pddl.ITEM
     return plan
 
 
-def reachable(init, formula, items=pddl.ITEMS):
+def reachable(init, formula, items=None):
     """Whether the goal can be reached from `init` at all (the planner)."""
     try:
         solve(init, formula, log=lambda s: None, items=items)
@@ -113,10 +120,11 @@ def reachable(init, formula, items=pddl.ITEMS):
         return False
 
 
-def most_permissive_init(items=pddl.ITEMS):
-    """Every item on the table, gripper empty: every state of the domain is
-    reachable from here (items never leave the basket)."""
-    return frozenset({("on-table", i) for i in items} | {pddl.EMPTY})
+def most_permissive_init(items=None):
+    """Every item (default: the objects of the exercise's problem.pddl) on the
+    table, gripper empty: every state of the domain is reachable from here
+    (items never leave the basket)."""
+    return frozenset({("on-table", i) for i in (items or default_items())} | {pddl.EMPTY})
 
 
 # ---- scenes --------------------------------------------------------------------------

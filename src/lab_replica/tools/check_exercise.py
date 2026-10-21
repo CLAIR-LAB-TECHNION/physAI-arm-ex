@@ -94,9 +94,20 @@ def check_task():
     print("task planning (exercise/task_planning)")
     from lab_replica.planning import pddl
     from lab_replica.tamp import planner, task
-    from lab_replica.tamp.goal import holds, parse_goal, to_text
+    from lab_replica.tamp.goal import holds, parse_goal
     from lab_replica.exercise.task_planning import planning as tp
     planner.check()
+
+    def problem_file():
+        items = task.default_items()
+        known = objects.load_items()
+        problem = tp.load_problem(open(tp.PROBLEM_FILE).read())
+        check("problem.pddl: read by UPF with domain.pddl; its objects are the robot's items; it has a goal",
+              sorted(items) == sorted(known) and len(problem.goals) > 0,
+              f"{len(items)} objects" + (f"; missing {sorted(set(known) - set(items))}" if set(known) - set(items)
+                                         else "") + (f"; unknown {sorted(set(items) - set(known))}"
+                                                     if set(items) - set(known) else ""))
+    run("problem.pddl", problem_file)
     items = list(pddl.ITEMS)
     start = task.most_permissive_init(items)
     cases = [("(in-basket green-mug)", 2),
@@ -107,7 +118,7 @@ def check_task():
     for goal, n in cases:
         def one(goal=goal, n=n):
             formula, _ = parse_goal(goal)
-            text = tp.problem_pddl(items, start, to_text(formula))
+            text = task.problem_text(start, formula, "check", items)
             problem = tp.load_problem(text)
             plan = tp.solve(problem)
             states = tp.expected_states(problem, plan)
@@ -122,7 +133,8 @@ def check_task():
         run(f"plan for {goal}", one)
 
     def unsolvable():
-        text = tp.problem_pddl(items, start, "(and (in-basket red-can) (on-table red-can))")
+        formula, _ = parse_goal("(and (in-basket red-can) (on-table red-can))")
+        text = task.problem_text(start, formula, "check", items)
         try:
             tp.solve(tp.load_problem(text))
             check("an unreachable goal raises Unsolvable", False, "a plan was returned")

@@ -86,8 +86,8 @@ linked, so editing them needs no new build).
 | File | Function | What it does | Called by |
 |---|---|---|---|
 | `task_planning/domain.pddl` | | the PDDL domain: the actions' preconditions and effects (their names and parameters are fixed: the robot runs exactly these) | |
-| `task_planning/planning.py` | `problem_pddl` | the PDDL problem text: the items, the initial state, the goal | the goal console, `solve.py` |
-| | `load_problem` | the domain and the problem read by UPF (`PDDLReader`) | |
+| `task_planning/problem.pddl` | | the PDDL problem: its objects (the items) and a goal. The goal console keeps the objects (adding items added with `new-item:`) and replaces `:init` with the current state and `:goal` with the goal typed (`tamp/problem_file.py`) | the goal console, `solve.py` |
+| `task_planning/planning.py` | `load_problem` | the domain and the problem read by UPF (`PDDLReader`) | |
 | | `solve` | the plan: UPF's `OneshotPlanner(name="fast-downward")` | |
 | | `expected_states`, `facts_of` | the state after each action (UPF's `SequentialSimulator`) | |
 | | `execute_plan` | the robot performs the actions one by one, stopping at the first failure | the goal console |
@@ -823,7 +823,7 @@ A task directory (`problems_tamp/<name>/`):
 
 | File | |
 |---|---|
-| `problem.pddl`, `domain.pddl` | the task as PDDL: the twelve items, the scene's initial state, the goal; the domain (always exercise/task_planning/domain.pddl) |
+| `problem.pddl`, `domain.pddl` | the task as PDDL: exercise/task_planning/problem.pddl with the scene's initial state and the goal; the domain (always exercise/task_planning/domain.pddl) |
 | `plan.txt`, `planner.log` | the plan and the planner's output |
 | `world.sdf`, `layout.yaml`, `layout.png`, `render.png` | the scene: the Gazebo world, where every item stands (and the init, goal, plan), a top view, the lab camera's view |
 | `README.md` | the task, the plan, the commands, where to put the items on the real table |
@@ -845,9 +845,11 @@ same layout.
 ```
 
 * **Task planning** (`exercise/task_planning/planning.py`, called by
-  `lab_replica/tamp/task.py`): the problem is written as PDDL text (the items
-  as objects, the initial state, the goal formula), read together with
-  `exercise/task_planning/domain.pddl` by UPF's `PDDLReader`, and solved with
+  `lab_replica/tamp/task.py`): the problem is `exercise/task_planning/problem.pddl`
+  with its `:init` replaced by the initial state and its `:goal` by the goal
+  formula (`tamp/problem_file.py`; items added at run time join its objects),
+  read together with `exercise/task_planning/domain.pddl` by UPF's
+  `PDDLReader`, and solved with
   `OneshotPlanner(name="fast-downward")`; UPF's `SequentialSimulator` gives
   the state each action should produce. That is Fast Downward's LAMA
   (first iteration): satisficing, so a plan is not guaranteed to be the
@@ -1392,7 +1394,7 @@ physAI-arm-ex/
       domain.pddl          the lab's PDDL domain (the planner uses exercise/task_planning/domain.pddl)
       moveit/              MoveIt: lab_robot.srdf (planning group, collision pairs), kinematics, OMPL, limits
     lab_replica/           the Python library
-      exercise/            THE EXERCISE (no ROS): task_planning/ (domain.pddl, planning.py),
+      exercise/            THE EXERCISE (no ROS): task_planning/ (domain.pddl, problem.pddl, planning.py),
                            state_estimation.py, motion_planning.py
       toolkit.py           what the exercise may use: data types, fits, kinematics, plan steps
       moveit_client.py     MoveIt (move_group's services) without ROS in its interface
