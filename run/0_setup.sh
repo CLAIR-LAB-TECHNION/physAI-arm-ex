@@ -20,6 +20,7 @@
 # Face token is taken from .env, else from $HF_TOKEN, else asked for.
 
 set -eo pipefail
+trap 'echo "ERROR: run/0_setup.sh stopped at line $LINENO, in: $BASH_COMMAND" >&2' ERR
 
 WS="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV="$WS/.venv"
@@ -79,14 +80,22 @@ if [ ! -x "$VENV/bin/python" ]; then
     echo "made $VENV"
 fi
 if command -v nvidia-smi >/dev/null; then
-    driver=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
-    echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader | head -1), driver $driver"
-    [ "${driver%%.*}" -ge 570 ] 2>/dev/null || echo "WARNING: torch (CUDA 12.8) needs NVIDIA driver 570 or newer"
+    if gpu=$(nvidia-smi --query-gpu=name,driver_version --format=csv,noheader 2>&1 | head -1) \
+            && [[ "$gpu" == *,* ]]; then
+        driver=${gpu##*, }
+        echo "GPU: ${gpu%%,*}, driver $driver"
+        [ "${driver%%.*}" -ge 570 ] 2>/dev/null || echo "WARNING: torch (CUDA 12.8) needs NVIDIA driver 570 or newer"
+    else
+        # Typically "Driver/library version mismatch": the driver was
+        # updated (apt upgrade) and the old one is still loaded.
+        echo "WARNING: nvidia-smi fails: $gpu"
+        echo "         torch will not see the GPU until this is fixed; after a driver update, reboot"
+    fi
 else
     echo "WARNING: no NVIDIA GPU found (nvidia-smi): SAM 3 would run on the CPU, far too slowly"
 fi
 echo "installing requirements.txt (the first time: about 5 GB, mostly torch)"
-"$VENV/bin/pip" install --disable-pip-version-check -r "$WS/requirements.txt" | { grep -v "^Requirement already satisfied" || true; }
+"$VENV/bin/pip" install --disable-pip-version-check -r "$WS/requirements.txt"
 
 # ---- 3. Hugging Face token and SAM 3 ------------------------------------------------------------
 step "3/5 SAM 3 ($MODEL_ID)"
@@ -168,6 +177,9 @@ print(f"lab_replica from {config.workspace_root()}")
 URKinematics("ur5e")        # the robot model: xacro and ur_description
 gpu = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "NO GPU (CPU only)"
 print(f"torch {torch.__version__}, CUDA: {gpu}; transformers {transformers.__version__}")
+if not torch.cuda.is_available():
+    print("WARNING: torch cannot use the GPU, so SAM 3 would run on the CPU, far too slowly. "
+          "Check nvidia-smi (after a driver update: reboot), then run run/0_setup.sh again.")
 plan = task.solve(task.most_permissive_init(), parse_goal("(in-basket green-mug)")[0])
 print(f"planner (UPF, {planner.ENGINE}): (in-basket green-mug) -> {' '.join(plan)}")
 EOF
