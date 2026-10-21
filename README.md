@@ -70,7 +70,15 @@ argument always says where to run: **`sim`** (the Gazebo simulation) or
 
 On the lab PC this is done. On another computer that runs the consoles
 (Ubuntu 22.04 with [ROS 2 Humble](https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html),
-`ros-humble-desktop`, and an NVIDIA GPU):
+`ros-humble-desktop`, and an NVIDIA GPU), first, once, by an administrator
+(the only step that needs `sudo`):
+
+```console
+sudo apt install ros-humble-control-msgs ros-humble-controller-manager-msgs ros-humble-xacro \
+                 ros-humble-ur-description python3.10-venv python3-colcon-common-extensions
+```
+
+Then, as any user:
 
 ```console
 git clone https://github.com/guyazran/physAI-arm-ex.git
@@ -84,10 +92,11 @@ the clone's top directory (the one with `run/` and `src/`). Moving it after
 the setup breaks `.venv` and the build (they hold absolute paths): delete
 `.venv/`, `build/`, `install/` and `log/` there and run `run/0_setup.sh` again.
 
-`run/0_setup.sh` does everything, and skips what is done already:
+`run/0_setup.sh` does the rest, without `sudo`, and skips what is done
+already:
 
-1. installs the missing system packages (apt: the UR, Gazebo and RealSense
-   ROS packages, colcon, OpenCV, SciPy, ...; asks for `sudo` only then);
+1. checks the system packages above (if some are missing, it prints the
+   `apt` command and stops);
 2. makes the Python environment `.venv` and installs
    [`requirements.txt`](requirements.txt) into it: torch and transformers
    for SAM 3, the Unified Planning Framework with Fast Downward for the goal
@@ -100,11 +109,15 @@ the setup breaks `.venv` and the build (they hold absolute paths): delete
   [Hugging Face](https://huggingface.co/facebook/sam3) and make a read token
   (Settings, Access Tokens) before running the script. It needs about 3 GB
   of GPU memory.
-* Options: `--no-apt` (only report missing system packages), `--no-model`
-  (download SAM 3 on first use instead), `--fresh-venv` (make `.venv` again).
+* Options: `--no-model` (download SAM 3 on first use instead),
+  `--fresh-venv` (make `.venv` again).
   The token can also come from `$HF_TOKEN`.
 * The `.venv` sees the ROS and Ubuntu Python packages
   (`--system-site-packages`); numpy stays below 2, which ROS Humble needs.
+* This sets up a PC for the consoles. The robot's drivers and the camera
+  node run on other computers ([the real robot](#run-it-on-the-real-robot)).
+  The simulation needs more packages:
+  `sudo apt install ros-humble-ros-gz-sim ros-humble-ros-gz-bridge ros-humble-ign-ros2-control ros-humble-controller-manager ros-humble-joint-state-broadcaster ros-humble-joint-trajectory-controller ros-humble-position-controllers`.
 * `.venv/`, `.env`, `build/`, `install/`, `log/` and the
   outputs (`runs/`, `videos/`, logs) are git-ignored.
 * The `run/` scripts source ROS 2, `install/setup.bash` and the `.venv`

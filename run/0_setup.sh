@@ -1,39 +1,42 @@
 #!/usr/bin/env bash
 # Step 0, once (and again after pulling new code): set up this PC to run the
-# consoles and the simulation. Every step skips what is done already:
+# consoles. Needs no sudo. Every step skips what is done already:
 #
-#   1. the system packages (apt; asks for sudo only when some are missing)
+#   1. a check of the system packages (it installs none: if some are
+#      missing, it prints the apt command for an administrator and stops)
 #   2. the Python environment .venv (requirements.txt: SAM 3, the task planner)
 #   3. the Hugging Face token (.env) and the SAM 3 checkpoint (3.4 GB)
 #   4. the ROS workspace (colcon build)
 #   5. a check that everything is in place
 #
-#   run/0_setup.sh [--no-apt] [--no-model] [--fresh-venv]
+#   run/0_setup.sh [--no-model] [--fresh-venv]
 #
-#   --no-apt      do not install system packages (only report missing ones)
 #   --no-model    do not download SAM 3 now (it is downloaded on first use)
 #   --fresh-venv  delete .venv and make it again
 #
-# Needs Ubuntu 22.04 with ROS 2 Humble in /opt/ros/humble. The Hugging Face
-# token is taken from .env, else from $HF_TOKEN, else asked for.
+# Needs Ubuntu 22.04 with ROS 2 Humble in /opt/ros/humble (ros-humble-desktop)
+# and the packages below. The robot's drivers and the camera node run on
+# other computers; the simulation needs more packages (README). The Hugging
+# Face token is taken from .env, else from $HF_TOKEN, else asked for.
 
 set -eo pipefail
 
 WS="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV="$WS/.venv"
 MODEL_ID="facebook/sam3"
+# What the consoles need beyond ros-humble-desktop
 APT_PACKAGES=(
-    ros-humble-ur ros-humble-ros-gz-sim ros-humble-ros-gz-bridge ros-humble-ign-ros2-control
-    ros-humble-controller-manager ros-humble-joint-state-broadcaster ros-humble-joint-trajectory-controller
-    ros-humble-position-controllers ros-humble-robot-state-publisher ros-humble-xacro
-    ros-humble-realsense2-camera ros-humble-rqt-image-view python3-colcon-common-extensions
-    python3-numpy python3-yaml python3-opencv python3-pil python3-scipy python3-pip python3.10-venv
+    ros-humble-control-msgs             # arm and gripper actions
+    ros-humble-controller-manager-msgs  # which arm controller is active
+    ros-humble-xacro                    # the robot model (camera pose, motion planning)
+    ros-humble-ur-description           # the UR5e in that model
+    python3.10-venv                     # python3 -m venv
+    python3-colcon-common-extensions    # colcon build
 )
 
-APT=1 MODEL=1 FRESH=0
+MODEL=1 FRESH=0
 for a in "$@"; do
     case "$a" in
-        --no-apt) APT=0 ;;
         --no-model) MODEL=0 ;;
         --fresh-venv) FRESH=1 ;;
         -h|--help) sed -n '2,/^$/s/^# \{0,1\}//p' "$0"; exit 0 ;;
@@ -55,16 +58,12 @@ missing=()
 for p in "${APT_PACKAGES[@]}"; do
     dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q "install ok installed" || missing+=("$p")
 done
-if [ ${#missing[@]} -eq 0 ]; then
-    echo "all ${#APT_PACKAGES[@]} installed"
-elif [ $APT -eq 0 ]; then
-    fail "missing: ${missing[*]}
+if [ ${#missing[@]} -gt 0 ]; then
+    fail "missing system packages: ${missing[*]}
+       An administrator installs them with:
        sudo apt-get install ${missing[*]}"
-else
-    echo "installing: ${missing[*]}"
-    sudo apt-get update
-    sudo apt-get install -y "${missing[@]}"
 fi
+echo "all ${#APT_PACKAGES[@]} installed"
 
 # ---- 2. the Python environment -----------------------------------------------------------------
 step "2/5 the Python environment ($VENV)"
@@ -148,18 +147,25 @@ step "5/5 check"
 source "$WS/install/setup.bash"
 source "$VENV/bin/activate"
 python - <<'EOF'
+import control_msgs.action  # noqa: F401
+import controller_manager_msgs.srv  # noqa: F401
+import cv2  # noqa: F401
 import numpy
 import rclpy  # noqa: F401  (ROS from the .venv)
 import scipy  # noqa: F401
 import torch
 import transformers
+import yaml  # noqa: F401
 
 from lab_replica import config
 from lab_replica.tamp import planner, task
 from lab_replica.tamp.goal import parse_goal
 
 assert numpy.__version__.startswith("1."), f"numpy {numpy.__version__}: ROS Humble needs numpy 1"
+from lab_replica.robot.kinematics import URKinematics
+
 print(f"lab_replica from {config.workspace_root()}")
+URKinematics("ur5e")        # the robot model: xacro and ur_description
 gpu = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "NO GPU (CPU only)"
 print(f"torch {torch.__version__}, CUDA: {gpu}; transformers {transformers.__version__}")
 plan = task.solve(task.most_permissive_init(), parse_goal("(in-basket green-mug)")[0])
@@ -167,4 +173,5 @@ print(f"planner (UPF, {planner.ENGINE}): (in-basket green-mug) -> {' '.join(plan
 EOF
 
 echo
-echo "Set up. Next: run/1_robot.sh sim, run/2_camera.sh sim, run/3_actions.sh sim (README, \"Run it\")."
+echo "Set up. Next, with the robot's drivers and the camera running on their computers:"
+echo "  run/3_actions.sh real    or    run/4_goals.sh real    (README, \"Run it on the real robot\")"
