@@ -2,22 +2,16 @@
 
 The items are known (config/items.yaml, lab_replica/objects), so their
 placement (support, resting pose, x, y, yaw: planning.placement.Placement)
-is fitted to the points with the item's own dimensions:
-
-    resting pose   the stable pose whose height matches the highest points
-    x, y           the top surface seen from above: a circle of the known
-                   radius for round items, a rectangle for blocks and for a
-                   can lying on its side, the trigger head of the spray bottle
-    yaw            the rectangle's direction; the mug's handle; the spray
-                   bottle's nozzle (the side of the head away from the body)
+is fitted with the item's own model: the exercise's estimate_placement
+(exercise/state_estimation.py) matches the model's top surface seen from
+above (model_height_map, from its collision shapes) to the heights of the
+points around the item, for every item kind alike.
 
 Points are world points (z up, the table top at z = table_z). The camera is
 assumed to look roughly down, so every item's top is visible.
 
-The estimate itself is the exercise's (exercise/state_estimation.py
-estimate_placement); this module has the fits it uses (circle_fit,
-rect_fit, ...), the mug's and the spray bottle's shapes, the measuring of
-a new item and the basket.
+This module has what the estimate uses (model_height_map, rect_fit, ...),
+the measuring of a new item and the basket.
 """
 
 import math
@@ -28,7 +22,7 @@ import numpy as np
 from scipy.optimize import least_squares
 
 from ..planning.placement import Placement
-from ..transforms import wrap
+from ..transforms import rpy_to_matrix, wrap
 
 
 @dataclass
@@ -80,74 +74,81 @@ def gauss(err, scale):
     return math.exp(-(err / scale) ** 2)
 
 
-# ---- the item kinds (the simple ones are in exercise/state_estimation.py) ----------------
+# ---- the item's model seen from above -------------------------------------------------
 
 
-def estimate_item(item, pts, table_z, basket=None, basket_xy=None):
-    """Estimate of `item` (an objects.* model) from world points (N, 3), or
-    None when there are too few points: the exercise's estimate_placement
-    (exercise/state_estimation.py)."""
+def estimate_item(item, pts, around, table_z, basket=None, basket_xy=None):
+    """Estimate of `item` (an objects.* model) from the world points (N, 3)
+    of its mask and those around it, or None when there are too few points:
+    the exercise's estimate_placement (exercise/state_estimation.py)."""
     from ..exercise.state_estimation import estimate_placement
-    return estimate_placement(item, pts, table_z, basket, basket_xy)
+    return estimate_placement(item, pts, around, table_z, basket, basket_xy)
 
 
 def top_layer(pts, top_abs, band):
     return pts[pts[:, 2] > top_abs - band]
 
 
-def fit_mug(item, rest, pts, top_abs):
-    s = item.spec
-    c, _ = circle_fit(top_layer(pts, top_abs, 0.008)[:, :2], s["top_diameter"] / 2)
-    r_body = s["top_diameter"] / 2
-    d = pts[:, :2] - c
-    rr = np.hypot(d[:, 0], d[:, 1])
-    handle = d[(rr > r_body + 0.007) & (rr < r_body + s["handle_reach"] + 0.012) & (pts[:, 2] < top_abs - 0.006)]
-    if len(handle) >= 15:
-        m = handle.mean(axis=0)
-        return c, math.atan2(m[1], m[0]), []
-    return c, 0.0, ["handle not seen"]
+class ModelHeightMap:
+    """An item's top surface seen from above, resting in one of its poses:
+    the height above the support of its highest point at each cell of a grid
+    in the rested frame (x, y as in RestPose.footprint), 0 where the item is
+    not. Made from the item's collision shapes (objects/*.py), so every kind
+    of item has one, items added at run time too.
+
+        hm = model_height_map(item, rest)
+        hm.at(u, v)    heights at the points (u[i], v[i]) of the rested frame
+    """
+
+    def __init__(self, item, rest, cell):
+        rp = item.poses[rest]
+        R0 = rpy_to_matrix(*rp.rpy)
+        self.cell = cell
+        self.origin = rp.footprint.min(axis=0) - 3 * cell
+        size = rp.footprint.max(axis=0) + 3 * cell - self.origin
+        X, Y = np.meshgrid(self.origin[0] + cell * np.arange(int(size[0] / cell) + 1),
+                           self.origin[1] + cell * np.arange(int(size[1] / cell) + 1))
+        self.heights = np.zeros(X.shape)
+        for sh in item.shapes:
+            # The highest point of the shape on the vertical line through each
+            # cell: the line in the shape's frame, clipped to its box (a
+            # cylinder counts as its bounding box: only the thin base disks
+            # and the spray bottle's neck are cylinders).
+            R = R0 @ rpy_to_matrix(*sh.rpy)
+            c = R0 @ np.asarray(sh.xyz, float) + np.array([0.0, 0.0, rp.z])
+            half = (np.array(sh.size) / 2 if sh.kind == "box"
+                    else np.array([sh.size[0], sh.size[0], sh.size[1] / 2]))
+            o = np.stack([X - c[0], Y - c[1], np.full(X.shape, -c[2])], axis=-1) @ R
+            d = R[2]                                   # the vertical, in the shape's frame
+            t_in, t_out = np.full(X.shape, -np.inf), np.full(X.shape, np.inf)
+            for k in range(3):
+                if abs(d[k]) < 1e-9:
+                    t_out[np.abs(o[..., k]) > half[k]] = -np.inf
+                    continue
+                a, b = (-half[k] - o[..., k]) / d[k], (half[k] - o[..., k]) / d[k]
+                t_in, t_out = np.maximum(t_in, np.minimum(a, b)), np.minimum(t_out, np.maximum(a, b))
+            hit = t_in <= t_out
+            self.heights[hit] = np.maximum(self.heights[hit], t_out[hit])
+        self.heights = self.heights.astype(np.float32)
+
+    def at(self, u, v):
+        # The grid has a border of empty cells: points off it read 0 there.
+        ny, nx = self.heights.shape
+        i = np.clip(((np.asarray(v) - self.origin[1]) / self.cell + 0.5).astype(np.int32), 0, ny - 1)
+        j = np.clip(((np.asarray(u) - self.origin[0]) / self.cell + 0.5).astype(np.int32), 0, nx - 1)
+        return self.heights.take(i * nx + j)
 
 
-def mug_handle_yaw(item, est, context):
-    """Yaw of a mug (its x axis points at the handle) from the points around
-    its body that belong to no other object, or None. `est` is the mug's
-    Estimate (centre and top), `context` world points (N, 3)."""
-    s = item.spec
-    p = est.placement
-    r_body = s["top_diameter"] / 2
-    d = context[:, :2] - np.array([p.x, p.y])
-    rr = np.hypot(d[:, 0], d[:, 1])
-    sel = ((rr > r_body + 0.006) & (rr < r_body + s["handle_reach"] + 0.012)
-           & (context[:, 2] > p.z_support + 0.012) & (context[:, 2] < est.top_z - 0.006))
-    d = d[sel]
-    if len(d) < 15:
-        return None
-    ang = np.arctan2(d[:, 1], d[:, 0])
-    hist, edges = np.histogram(ang, bins=24, range=(-math.pi, math.pi))
-    k = int(np.argmax(hist))
-    peak = (edges[k] + edges[k + 1]) / 2
-    near = ang[np.abs(np.angle(np.exp(1j * (ang - peak)))) < math.radians(40)]
-    if len(near) < 15:
-        return None
-    return float(np.angle(np.exp(1j * near).mean()))
+_HEIGHT_MAPS = {}
 
 
-def fit_spray_bottle(item, rest, pts, top_abs):
-    s = item.spec
-    head = top_layer(pts, top_abs, s["head_height"] * 0.6)
-    hc, _, a = rect_fit(head[:, :2])
-    body = pts[pts[:, 2] < top_abs - s["head_height"] - s["neck_height"] - 0.01]
-    u = np.array([math.cos(a), math.sin(a)])
-    notes = []
-    if len(body) >= 30:
-        bc, _, _ = rect_fit(body[:, :2])   # the body's outline, seen from above
-        # The nozzle side of the head sticks out beyond the body.
-        if np.dot(hc - bc, u) < 0:
-            a = wrap(a + math.pi)
-    else:
-        notes.append("body not seen: nozzle direction unknown")
-    u = np.array([math.cos(a), math.sin(a)])
-    return hc - s["head_offset"] * u, a, notes
+def model_height_map(item, rest, cell=0.002):
+    """The ModelHeightMap of `item` resting as `rest` (made once per item,
+    resting pose and cell size)."""
+    key = (item.name, id(item), rest, cell)
+    if key not in _HEIGHT_MAPS:
+        _HEIGHT_MAPS[key] = ModelHeightMap(item, rest, cell)
+    return _HEIGHT_MAPS[key]
 
 
 # ---- measuring a new item ----------------------------------------------------------------

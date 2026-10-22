@@ -16,7 +16,7 @@ import numpy as np
 
 from .. import config
 from ..exercise import state_estimation as se
-from .estimate import estimate_basket, estimate_item, mug_handle_yaw
+from .estimate import estimate_basket, estimate_item
 
 
 def load_perception_config():
@@ -84,6 +84,41 @@ class ScenePerception:
         keep &= np.hypot(P[:, 0], P[:, 1]) > self.cfg["robot_radius"]
         return P[keep]
 
+    def _world(self, frame):
+        """World points (H, W, 3) of every pixel of `frame` (NaN without
+        depth); computed once per frame."""
+        if getattr(frame, "world", None) is None:
+            H, W = frame.depth.shape
+            vv, uu = np.mgrid[0:H, 0:W]
+            ok = np.isfinite(frame.depth) & (frame.depth > 0)
+            P = np.full((H, W, 3), np.nan)
+            P[ok] = se.pixels_to_world(uu[ok], vv[ok], frame.depth[ok], frame.K, frame.T_world_cam)
+            frame.world = P
+        return frame.world
+
+    def _around(self, frame, centre, radius, blocked):
+        """The world points within `radius` of `centre` (x, y), table
+        included, except the pixels `blocked` and those near the robot."""
+        P = self._world(frame)
+        keep = ~blocked & (np.hypot(P[..., 0] - centre[0], P[..., 1] - centre[1]) < radius)
+        P = P[keep]
+        P = P[(P[:, 2] > self.table_z - 0.01) & (P[:, 2] < self.table_z + self.cfg["max_item_height"])]
+        return P[np.hypot(P[:, 0], P[:, 1]) > self.cfg["robot_radius"]]
+
+    def points_around(self, frame, mask, item, others=()):
+        """The world points (N, 3) around the item `item` (a model) whose mask
+        is `mask`: as far as it reaches from the mask's middle plus
+        AROUND_MARGIN, the table there too, without the pixels of the masks
+        `others` (grown by OTHERS_GROW_PX: their edges mix depths)."""
+        pts = self._points(frame, mask, erode_px=0)
+        if len(pts) == 0:
+            return pts
+        blocked = np.zeros(mask.shape, bool)
+        for m in others:
+            blocked |= _grow(m)
+        blocked &= ~mask
+        return self._around(frame, np.median(pts[:, :2], axis=0), item_reach(item) + AROUND_MARGIN, blocked)
+
     def detect(self, frame, items=None, basket_xy=None, view=0, exclude=()):
         """(detections {item: Detection}, basket_xy, basket mask) in one frame.
 
@@ -96,49 +131,37 @@ class ScenePerception:
         basket_mask = res[bp][0].mask if res[bp] else None
         if basket_xy is None and basket_mask is not None:
             basket_xy = estimate_basket(self.basket, self._points(frame, basket_mask), self.table_z)
+        # Each item is fitted to the points around its mask, without those of
+        # the other things: the masks SAM 3 is confident of (a weak one may
+        # be a wrong name on part of this very item) and the basket. How many
+        # of them (grown) cover each pixel, less the mask's own and those of
+        # the same object under another name; the mask's own pixels always
+        # count (the basket's mask covers the items in it).
+        insts = [(self.prompt_item[p], inst) for p in prompts for inst in res[p]]
+        sure = [k for k, (_, inst) in enumerate(insts) if inst.score >= CONFIDENT_SCORE]
+        grown = {k: _grow(insts[k][1].mask) for k in sure}
+        boxes = [_bbox(inst.mask) for _, inst in insts]
+        covered = np.zeros(frame.depth.shape, np.int16)
+        for g in grown.values():
+            covered += g
+        if basket_mask is not None:
+            covered += _grow(basket_mask)
         cands = []
-        for p in prompts:
-            item = self.prompt_item[p]
-            for inst in res[p]:
-                pts = self._points(frame, inst.mask)
-                est = estimate_item(self.items[item], pts, self.table_z, self.basket, basket_xy)
-                if est is not None:
-                    cands.append(Detection(item, inst.score * est.plausibility, inst.score, est, inst.mask, view,
-                                           frame))
-        # A mask may cover only part of its item (the spray bottle's body
-        # without its grey head) and then fit badly: fit it again to all the
-        # depth points around it, except those of masks that already fit
-        # another item well.
-        confident = [d for d in cands if d.score >= 0.5]
-        for d in cands:
-            if d.estimate.plausibility >= 0.5:
+        for k, (item, inst) in enumerate(insts):
+            pts = self._points(frame, inst.mask)
+            if len(pts) < 30:
                 continue
-            others = [o.mask for o in confident if o.item != d.item and _overlap(o.mask, d.mask) < 0.3]
-            if basket_mask is not None:
-                others.append(basket_mask)
-            est2 = self.refit(d.item, d.estimate, frame, others, basket_xy=basket_xy, grow=0.03, max_shift=0.06)
-            if est2 is not None and est2.plausibility > d.estimate.plausibility:
-                est2.notes.append("grown beyond the mask")
-                d.estimate, d.score = est2, d.sam_score * est2.plausibility
+            mine = covered.copy()
+            for j in sure:
+                if j == k or (_boxes_meet(boxes[j], boxes[k]) and _overlap(insts[j][1].mask, inst.mask) > 0.5):
+                    mine -= grown[j]
+            around = self._around(frame, np.median(pts[:, :2], axis=0),
+                                  item_reach(self.items[item]) + AROUND_MARGIN, (mine > 0) & ~inst.mask)
+            est = estimate_item(self.items[item], pts, around, self.table_z, self.basket, basket_xy)
+            if est is not None:
+                cands.append(Detection(item, inst.score * est.plausibility, inst.score, est, inst.mask, view, frame))
         # One mask per item, one item per mask (the exercise's assign_masks).
-        chosen = se.assign_masks(cands, self.cfg["min_assignment_score"])
-        # The mug's handle is usually not part of its mask: look for it in
-        # the depth points around the body that belong to nothing else.
-        for item, d in chosen.items():
-            if self.items[item].kind != "mug":
-                continue
-            others = np.zeros(frame.depth.shape, bool)
-            for o in chosen.values():
-                if o is not d:
-                    others |= o.mask
-            if basket_mask is not None:
-                others |= basket_mask
-            ctx = self._points(frame, ~others)
-            yaw = mug_handle_yaw(self.items[item], d.estimate, ctx)
-            if yaw is not None:
-                d.estimate.placement.yaw = yaw
-                d.estimate.notes = [n for n in d.estimate.notes if n != "handle not seen"]
-        return chosen, basket_xy
+        return se.assign_masks(cands, self.cfg["min_assignment_score"]), basket_xy
 
     # ---- several frames -------------------------------------------------------------
 
@@ -172,31 +195,56 @@ class ScenePerception:
                 d.estimate = est
         return scene
 
-    def refit(self, item, est, frame, other_masks=(), basket_xy=None, grow=0.025, max_shift=0.04):
-        """Re-estimate `item` from the depth of `frame` inside its footprint
-        (grown by `grow`), without the pixels of `other_masks`; None if that
-        does not give a plausible estimate near the old one."""
+    def refit(self, item, est, frame, other_masks=(), basket_xy=None, max_shift=0.04):
+        """Re-estimate `item` from the depth of `frame` around where `est`
+        put it, without the pixels of `other_masks`; None if that does not
+        give a plausible estimate near the old one."""
         p = est.placement
         model = self.items[item]
-        H, W = frame.depth.shape
-        keep = np.ones((H, W), bool)
+        blocked = np.zeros(frame.depth.shape, bool)
         for m in other_masks:
-            keep &= ~m
-        P = frame.points_world(keep, stride=2)
-        P = P[(P[:, 2] > p.z_support + 0.004) & (P[:, 2] < p.z_support + model.poses[p.rest].top + 0.03)]
+            blocked |= _grow(m)
         fp = model.footprint_world(p.rest, p.x, p.y, p.yaw)
         c = fp.mean(axis=0)
-        rad = np.max(np.hypot(*(fp - c).T)) + grow
-        P = P[np.hypot(P[:, 0] - c[0], P[:, 1] - c[1]) < rad]
-        P = P[np.hypot(P[:, 0], P[:, 1]) > self.cfg["robot_radius"]]
+        r = np.max(np.hypot(*(fp - c).T))
+        around = self._around(frame, c, r + AROUND_MARGIN, blocked)
+        P = around[(around[:, 2] > p.z_support + 0.004) & (np.hypot(around[:, 0] - c[0], around[:, 1] - c[1]) < r)]
         P = largest_cluster(P)
-        new = estimate_item(model, P, self.table_z, self.basket, basket_xy)
+        new = estimate_item(model, P, around, self.table_z, self.basket, basket_xy)
         if new is None or new.plausibility < 0.5:
             return None
         q = new.placement
         if np.hypot(q.x - p.x, q.y - p.y) > max_shift:
             return None
         return new
+
+
+AROUND_MARGIN = 0.025    # the points around an item reach this far beyond it [m]
+CONFIDENT_SCORE = 0.5    # SAM 3 masks this sure leave their points out of the other items' fits
+OTHERS_GROW_PX = 3       # other masks are grown by this many pixels before their points are left out
+
+
+def item_reach(item):
+    """How far the item reaches from its middle seen from above, in any of
+    its resting poses [m]."""
+    return max(float(np.max(np.hypot(*rp.footprint.T))) for rp in item.poses.values())
+
+
+def _grow(mask):
+    k = 2 * OTHERS_GROW_PX + 1
+    return cv2.dilate(mask.astype(np.uint8), np.ones((k, k), np.uint8)) > 0
+
+
+def _bbox(mask):
+    rows, cols = np.any(mask, axis=1), np.any(mask, axis=0)
+    if not rows.any():
+        return (0, -1, 0, -1)
+    r, c = np.nonzero(rows)[0], np.nonzero(cols)[0]
+    return (r[0], r[-1], c[0], c[-1])
+
+
+def _boxes_meet(a, b):
+    return a[0] <= b[1] and b[0] <= a[1] and a[2] <= b[3] and b[2] <= a[3]
 
 
 def model_mask(frame, model, placement):

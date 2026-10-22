@@ -470,6 +470,11 @@ class ActionExecutive:
         from the robot; the mask eroded by erode_px (default perception.yaml's)."""
         return self.perception._points(frame, mask, erode_px=erode_px)
 
+    def points_around(self, frame, mask, model, others=()):
+        """The world points around a mask (as far as the item `model` reaches),
+        table included, without the pixels of the masks `others`."""
+        return self.perception.points_around(frame, mask, model, others)
+
     def show(self, frame, draw, title):
         """An annotated observation: draw(view) -> BGR image, drawn on the
         frame's colour image and on its depth (annotate.DepthLook)."""

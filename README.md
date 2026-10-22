@@ -101,7 +101,8 @@ linked, so editing them needs no new build).
 | | `execute_plan` | the robot performs the actions one by one, stopping at the first failure | the goal console |
 | `state_estimation.py` | `OBSERVATION_JOINTS` | the [observation configuration](#the-observation-configuration): the arm's joints from which the wrist camera sees the whole workspace | every action (`robot.survey`) |
 | | `pixels_to_world` | depth pixels to 3D points in the world frame (pinhole camera) | every look |
-| | `estimate_placement` | an item's 3D points to where and how it rests (support, resting pose, x, y, yaw) | every look |
+| | `estimate_placement` | an item's 3D points, and those around it, to where and how it rests (support, resting pose, x, y, yaw) | every look |
+| | `height_map`, `pose_cost`, `fit_pose` | its model seen from above (`toolkit.model_height_map`) matched to the heights of the points: the same for every kind of item | |
 | | `assign_masks` | SAM 3's masks in one image to at most one per item | every look |
 | | `fuse_views` | the items found in several images to one estimate per item | every look |
 | | `grasp_in_image` | top-down grasps proposed in the image: a pixel and a closing direction | `(pick-up X)` |

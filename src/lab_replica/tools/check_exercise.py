@@ -186,10 +186,15 @@ def check_state():
     run("pixels_to_world", points)
 
     def placement():
-        for model, p, mask in ((block, pb, frame.masks[0]), (can, pc, frame.masks[1])):
+        for model, p, mask, other in ((block, pb, *frame.masks), (can, pc, *frame.masks[::-1])):
             v, u = np.nonzero(mask)
             pts = se.pixels_to_world(u, v, frame.depth[v, u], frame.K, frame.T_world_cam)
-            est = se.estimate_placement(model, pts, table_z)
+            # Around it: the pixels within 10 cm of its middle, but those of the other item.
+            v, u = np.nonzero(~other)
+            P = se.pixels_to_world(u, v, frame.depth[v, u], frame.K, frame.T_world_cam)
+            c = np.median(pts[:, :2], axis=0)
+            around = P[np.hypot(P[:, 0] - c[0], P[:, 1] - c[1]) < 0.10]
+            est = se.estimate_placement(model, pts, around, table_z)
             q = est.placement
             dyaw = abs((q.yaw - p.yaw + math.pi / 4) % (math.pi / 2) - math.pi / 4) if model is block else 0.0
             check(f"estimate_placement: {p.item}",

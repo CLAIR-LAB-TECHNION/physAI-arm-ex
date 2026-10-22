@@ -14,6 +14,10 @@ Besides what skills.py describes, the robot (autonomy/executive.py) has:
     robot.points(frame, mask, erode_px=None)
                                      the world points (N, 3) of a mask's pixels, above the table and
                                      away from the robot (eroded by perception.yaml's mask_erode_px)
+    robot.points_around(frame, mask, model, others=())
+                                     the world points around a mask, table included (what
+                                     estimate_item fits the model to), without the pixels of the
+                                     masks `others`
     robot.add_item(name, spec)       know `name` from now on: its model and its SAM 3 prompts
     robot.remove_item(name)          forget it
 """
@@ -83,7 +87,9 @@ def new_item(robot, name, prompt, shape=None):
             "measured": time.strftime("%Y-%m-%d %H:%M")}
     # The new model must explain the points it was made from.
     model = make_item(name, spec)
-    est = estimate_item(model, pts, robot.table_z, robot.basket, scene.basket_xy)
+    others = [d.mask for d in scene.detections.values() if d.frame is frame]
+    est = estimate_item(model, pts, robot.points_around(frame, mask, model, others), robot.table_z, robot.basket,
+                        scene.basket_xy)
     if est is None or est.plausibility < 0.5:
         notes.append(f"its model fits its own points badly (plausibility "
                      f"{0 if est is None else est.plausibility:.2f})")

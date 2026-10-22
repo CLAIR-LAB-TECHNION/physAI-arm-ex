@@ -7,7 +7,8 @@ boolean image) with a score. These functions turn them into the scene:
 
     OBSERVATION_JOINTS   the arm's joints from which the camera sees the whole workspace
     pixels_to_world      depth pixels -> 3D points in the world frame
-    estimate_placement   one item's points -> where and how it rests
+    estimate_placement   one item's points and those around it -> where and how it rests
+                         (height_map, pose_cost, fit_pose: its model matched to the points)
     assign_masks         the candidate masks of one frame -> at most one per item
     fuse_views           the detections of several frames -> one per item
     grasp_in_image       an item's mask -> top-down grasps in the image
@@ -26,8 +27,8 @@ import math
 import cv2
 import numpy as np
 
-from ..toolkit import (Estimate, Grasp, ImageGrasp, Placement, circle_fit, fit_mug, fit_spray_bottle,
-                       gauss, gripper_pose, mask_overlap, rect_fit, rg6, robust_top, top_layer, wrap)
+from ..toolkit import (Estimate, Grasp, ImageGrasp, Placement, gauss, gripper_pose, mask_overlap, model_height_map,
+                       rect_fit, rg6, robust_top, wrap)
 
 # ---- where the camera looks from ----------------------------------------------------------
 
@@ -63,21 +64,40 @@ def pixels_to_world(u, v, depth, K, T_world_cam):
 
 
 # ---- one item: where it rests ---------------------------------------------------------------
+#
+# The item's model is matched to what the camera saw, both seen from above as
+# height maps: the model's (toolkit.model_height_map, from its collision
+# shapes) and the points' (height_map). The pose (resting pose, x, y, yaw)
+# is the one where the model's heights best explain the points' heights
+# (pose_cost), found by trying many poses (fit_pose). The same for every
+# kind of item: nothing here knows what a can or a mug is.
+#
+# The points are those around the item, the table included: where the
+# camera sees the table, the item is not. Its mask alone would let the model
+# slide and turn as long as it covers the mask.
+
+MAP_CELL = 0.002        # cell of the model's height map [m]
+TRUNCATE = 0.015        # a height difference counts up to this much [m]: bits of other things
+BELOW_WEIGHT = 0.25     # weight of the model standing higher than the points: the camera sees
+                        # into a cup or a tape roll, the collision shapes are solid
 
 
-def estimate_placement(item, pts, table_z, basket=None, basket_xy=None):
-    """How `item` rests, from the world points (N, 3) of its mask: an
-    Estimate (its Placement, how plausible the points are for this item,
-    ...), or None when there are too few points.
+def estimate_placement(item, pts, around, table_z, basket=None, basket_xy=None):
+    """How `item` rests: an Estimate (its Placement, how plausible the points
+    are for this item, ...), or None when there are too few points.
 
+    pts        the world points (N, 3) of the item's mask
+    around     the world points (M, 3) around the item (its mask, the table
+               near it, ...) without those of the other items and the basket
     item       the item's model (objects/*.py): .kind, .spec (items.yaml),
                .poses {resting pose: RestPose (.top: its height, .footprint)}
     basket     the basket's model (objects/basket.py), basket_xy its centre
                (None: not known; then everything is on the table)
 
     The support is the basket when the points are inside its rim, else the
-    table. The resting pose is the one whose height matches the top of the
-    points. x, y and yaw come from the shape seen from above."""
+    table. In the basket the item may lie on others: its support is then
+    as high as its top less its height. The resting pose, x, y and yaw come
+    from fit_pose, the best of the item's resting poses."""
     pts = np.asarray(pts, float)
     if len(pts) < 30:
         return None
@@ -90,91 +110,102 @@ def estimate_placement(item, pts, table_z, basket=None, basket_xy=None):
     if len(pts) < 30:
         return None
     top_abs = robust_top(pts[:, 2])
-    # Resting pose: the one whose height matches. In the basket the item may
-    # lie on others, so it is only matched against the floor if that fits.
-    rests = list(item.spec["stable_poses"])
-    h = top_abs - z_floor
-    rest = min(rests, key=lambda r: abs(item.poses[r].top - h))
+    centre = np.median(pts[:, :2], axis=0)
+    around = np.asarray(around, float)
+    if len(around) < len(pts):        # fewer than its own: use its own
+        around = pts
+    best = None
+    for rest in item.spec["stable_poses"]:
+        z_support = z_floor if support == "table" else max(z_floor, top_abs - item.poses[rest].top)
+        cost, x, y, yaw = fit_pose(item, rest, around, z_support, centre)
+        if best is None or cost < best[0]:
+            best = (cost, rest, x, y, yaw, z_support)
+    _, rest, x, y, yaw, z_support = best
     rp = item.poses[rest]
-    if support == "basket":
-        z_support = max(z_floor, top_abs - rp.top)
-    else:
-        z_support = table_z
-    fit = FITS.get(item.kind, fit_generic)
-    xy, yaw, notes = fit(item, rest, pts, top_abs)
     # Plausibility: height of the top above the support and the size of the
-    # outline must match the model.
+    # outline must match the model. The top is the mask's, or that of the
+    # points around it that the model covers there if that matches better:
+    # the mask may have missed part of the item (the spray bottle's grey
+    # head). The outline is the mask's: a mask much larger than the item (the
+    # whole basket) is not the item.
+    c, s = math.cos(yaw), math.sin(yaw)
+    dx, dy = around[:, 0] - x, around[:, 1] - y
+    covered = model_height_map(item, rest, MAP_CELL).at(c * dx + s * dy, -s * dx + c * dy) > 0
+    covered &= around[:, 2] > z_floor + 0.004
+    tops = [top_abs] + ([robust_top(around[covered, 2])] if np.count_nonzero(covered) >= 30 else [])
     if support == "table":
-        dh = abs(rp.top - (top_abs - z_support))
+        dh = min(abs(rp.top - (t - z_support)) for t in tops)
     else:
         # In the basket an item may rest on others (taller is fine), but it
         # cannot be shorter than its model.
-        dh = max(0.0, rp.top - (top_abs - z_floor))
+        dh = min(max(0.0, rp.top - (t - z_floor)) for t in tops)
     fp = rp.footprint
     ext_model = max(np.ptp(fp[:, 0]), np.ptp(fp[:, 1]))
     _, (w, _), _ = rect_fit(pts[:, :2])
     plaus = gauss(dh, 0.025) * gauss(max(0.0, w - ext_model * 1.15), 0.03)
-    p = Placement(item.name, rest, float(xy[0]), float(xy[1]), float(yaw), support=support,
-                  z_support=float(z_support))
-    return Estimate(p, plaus, len(pts), top_abs, notes)
+    p = Placement(item.name, rest, float(x), float(y), float(yaw), support=support, z_support=float(z_support))
+    return Estimate(p, plaus, len(pts), top_abs, [])
 
 
-# The shape seen from above, per kind of item: fit(item, rest, pts, top_abs)
-# -> ((x, y), yaw, notes). The mug's and the spray bottle's are given
-# (toolkit.fit_mug, toolkit.fit_spray_bottle).
-
-def fit_round(radius_key, band=0.008):
-    """For round items: a circle of the known radius (item.spec[radius_key] / 2)
-    through the top layer of the points; the yaw does not matter."""
-    def fit(item, rest, pts, top_abs):
-        r = item.spec[radius_key] / 2
-        c, _ = circle_fit(top_layer(pts, top_abs, band)[:, :2], r)
-        return c, 0.0, []
-    return fit
+def height_map(pts, z_support, cell):
+    """The points seen from above: the centres (N, 2) of the cells of a grid
+    `cell` wide that hold points, and the height above the support of the
+    highest point in each (N,). The highest, because from above the camera
+    sees an item's top; lower points in a cell are its sides."""
+    ij = np.floor(pts[:, :2] / cell).astype(np.int64)
+    order = np.lexsort((pts[:, 2], ij[:, 1], ij[:, 0]))      # by cell, highest last
+    ij, z = ij[order], pts[order, 2]
+    last = np.r_[np.any(ij[1:] != ij[:-1], axis=1), True]
+    return ((ij[last] + 0.5) * cell).astype(np.float32), (z[last] - z_support).astype(np.float32)
 
 
-def fit_block(item, rest, pts, top_abs):
-    """A block lying flat: the rectangle of its top face; the yaw of a square
-    is defined modulo 90 degrees."""
-    c, (w, h), a = rect_fit(top_layer(pts, top_abs, 0.008)[:, :2])
-    notes = [] if abs(w - item.spec["size"]) < 0.015 else [f"top face {w * 1000:.0f} x {h * 1000:.0f} mm"]
-    return c, wrap(a % (math.pi / 2)), notes
+def pose_cost(model, cells, heights, x, y, yaw):
+    """How badly the model, at (x[k], y[k]) turned by yaw, explains the
+    points' heights: per pose k, the mean over the cells of the squared
+    difference between the points' height and the model's there, at most
+    TRUNCATE (a cell may hold bits of something else), and weighted by
+    BELOW_WEIGHT where the model is the higher. Returns (K,).
+
+    model      toolkit.model_height_map(item, rest): model.at(u, v), the
+               heights at points (u, v) of the item's rested frame"""
+    c, s = math.cos(yaw), math.sin(yaw)
+    dx = cells[None, :, 0] - np.asarray(x, np.float32)[:, None]
+    dy = cells[None, :, 1] - np.asarray(y, np.float32)[:, None]
+    r = heights[None] - model.at(c * dx + s * dy, -s * dx + c * dy)      # cells into the rested frame
+    w = np.where(r > 0, np.float32(1.0), np.float32(BELOW_WEIGHT))
+    return (w * np.minimum(r * r, np.float32(TRUNCATE ** 2))).mean(axis=1)
 
 
-def fit_can(item, rest, pts, top_abs):
-    """Upright: round. Lying: the upper half of the cylinder is a rectangle
-    along the can's axis, which lies along the rested frame's y axis."""
-    if rest == "upright":
-        return fit_round("diameter", 0.01)(item, rest, pts, top_abs)
-    d = item.spec["diameter"]
-    c, _, a = rect_fit(top_layer(pts, top_abs, d * 0.4)[:, :2])
-    return c, wrap(a - math.pi / 2), []
+# The search of fit_pose, coarse to fine. Per stage: the cell of the points'
+# height map [m], the steps of yaw [deg] and of x, y [m], how far from the
+# poses kept by the stage before it looks (yaw [deg], x, y [m]) and how many
+# poses it keeps (each the best at its yaw).
+SEARCH = [(0.006, 10.0, 0.006, 180.0, 0.030, 6),
+          (0.003, 2.0, 0.002, 6.0, 0.004, 3),
+          (0.002, 0.5, 0.001, 2.0, 0.002, 1)]
 
 
-def fit_measured(item, rest, pts, top_abs):
-    """An item added at run time (objects/measured.py): round or a box."""
-    if item.spec["shape"] == "round":
-        c, _ = circle_fit(pts[:, :2], item.spec["size"][0] / 2)
-        return c, 0.0, []
-    h = item.spec["size"][2]
-    c, _, a = rect_fit(top_layer(pts, top_abs, max(0.004, min(0.008, 0.4 * h)))[:, :2])
-    return c, wrap(a % math.pi), []
-
-
-def fit_generic(item, rest, pts, top_abs):
-    c, _, a = rect_fit(pts[:, :2])
-    return c, a, ["generic fit"]
-
-
-FITS = {
-    "block": fit_block,
-    "tape_roll": fit_round("outer_diameter", 0.006),
-    "cup": fit_round("top_diameter", 0.010),
-    "can": fit_can,
-    "mug": fit_mug,
-    "spray_bottle": fit_spray_bottle,
-    "measured": fit_measured,
-}
+def fit_pose(item, rest, around, z_support, centre):
+    """(cost, x, y, yaw): the pose of `item` resting as `rest` on a support
+    at z_support whose model best explains the heights of the points
+    `around` it, near `centre` (the middle of its mask): every pose on a
+    grid, coarse to fine (SEARCH). Symmetric items (a cube, a can standing)
+    fit equally well at several yaws: any of them is right."""
+    model = model_height_map(item, rest, MAP_CELL)
+    kept = [(np.inf, centre[0], centre[1], 0.0)]
+    for cell, yaw_step, step, yaw_span, span, n_keep in SEARCH:
+        cells, heights = height_map(around, z_support, cell)
+        g = np.arange(-span, span + 1e-9, step)
+        gx, gy = [a.ravel() for a in np.meshgrid(g, g)]
+        found = []
+        for _, x0, y0, yaw0 in kept:
+            for yaw in yaw0 + np.radians(np.arange(-yaw_span, yaw_span + 1e-9, yaw_step)):
+                cost = pose_cost(model, cells, heights, x0 + gx, y0 + gy, yaw)
+                k = int(np.argmin(cost))
+                found.append((float(cost[k]), x0 + gx[k], y0 + gy[k], yaw))
+        kept = sorted(found, key=lambda t: t[0])[:n_keep]
+    cost, x, y, yaw = kept[0]
+    return cost, x, y, wrap(yaw)
 
 
 # ---- which mask is which item -------------------------------------------------------------

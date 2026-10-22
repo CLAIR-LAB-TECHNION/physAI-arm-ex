@@ -16,7 +16,10 @@ Data types
     ActionError   raised when an action cannot be performed (not applicable, item not found, ...)
 
 Perception helpers (perception/estimate.py)
-    circle_fit, rect_fit, robust_top, top_layer, gauss, fit_mug, fit_spray_bottle, mask_overlap,
+    model_height_map(item, rest)   an item's top surface seen from above, resting as `rest`:
+                                   .at(u, v) its heights above the support at points of the
+                                   rested frame (0 off the item), from its collision shapes
+    rect_fit, robust_top, gauss, mask_overlap,
     estimate_item (an item's Estimate from its points), measure_item (a new item's shape and size)
 
 Items
@@ -52,8 +55,8 @@ from dataclasses import dataclass
 import numpy as np
 
 from . import config
-from .perception.estimate import (Estimate, circle_fit, estimate_item, fit_mug, fit_spray_bottle, gauss,
-                                  measure_item, rect_fit, robust_top, top_layer)
+from .perception.estimate import (Estimate, estimate_item, gauss, measure_item, model_height_map, rect_fit,
+                                  robust_top)
 from .planning.geometry2d import polygon_inside_rect, polygons_intersect
 from .planning.motion import PlanError, Planner, gripper_pose
 from .planning.placement import Held, Placement, placement_pose
@@ -64,12 +67,11 @@ from .robot.kinematics import ARM_JOINTS, URKinematics
 from .transforms import rpy_to_matrix, wrap
 
 __all__ = ["ARM_JOINTS", "ActionError", "Box", "Cylinder", "Detection", "Estimate", "Grasp", "Held", "ImageGrasp",
-           "PlanError", "Placement", "box_in_world", "circle_fit", "estimate_item", "finger_footprints", "fit_mug",
-           "fit_spray_bottle", "fk", "gauss", "gripper_pose", "gripper_step", "ik_all", "joint_limits", "make_item",
-           "mask_overlap", "measure_item", "object_box", "placement_pose", "polygon_inside_rect",
-           "polygons_intersect", "rect_fit", "rg6", "robust_top", "rpy_to_matrix", "show_detections", "show_drop",
-           "show_grasp", "show_image_grasps", "show_masks", "show_new_item", "show_table_spot", "spread",
-           "top_layer", "trajectory", "wrap"]
+           "PlanError", "Placement", "box_in_world", "estimate_item", "finger_footprints", "fk", "gauss",
+           "gripper_pose", "gripper_step", "ik_all", "joint_limits", "make_item", "mask_overlap", "measure_item",
+           "model_height_map", "object_box", "placement_pose", "polygon_inside_rect", "polygons_intersect",
+           "rect_fit", "rg6", "robust_top", "rpy_to_matrix", "show_detections", "show_drop", "show_grasp",
+           "show_image_grasps", "show_masks", "show_new_item", "show_table_spot", "spread", "trajectory", "wrap"]
 
 
 class ActionError(RuntimeError):
