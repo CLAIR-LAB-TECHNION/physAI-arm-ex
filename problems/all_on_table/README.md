@@ -1,8 +1,8 @@
 # all_on_table
 
-The default scene of the simulation started by `run/1_robot.sh sim`: all
+The default scene of the simulation started by `run/sim.sh`: all
 twelve items on the blue board, the basket empty, the gripper empty, which is
-what the goal console (`run/4_goals.sh`) assumes at its start. Generated
+what the goal console (`run/goals.sh`) assumes at its start. Generated
 with seed 1 for the cell of 2026-10-18 (slatted table, 0.70 x 0.59 m board;
 stable layout settled in Gazebo, every item graspable):
 

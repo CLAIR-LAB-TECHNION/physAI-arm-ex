@@ -27,7 +27,7 @@ earlier `lab-tamp` workspace; see [Reference](#reference)).
 
 **Contents**
 
-1. [Run it: four scripts](#run-it-four-scripts)
+1. [Run it](#run-it)
 2. [The exercise](#the-exercise-task-planning-state-estimation-motion-planning-skills):
    task planning, state estimation, motion planning, skills
 3. [Build (once)](#build-once)
@@ -45,33 +45,39 @@ earlier `lab-tamp` workspace; see [Reference](#reference)).
 
 ---
 
-## Run it: four scripts
+## Run it
 
-Once, before the first run: `run/0_setup.sh` ([Build (once)](#build-once)).
+Once, before the first run: `run/setup.sh` ([Build (once)](#build-once)).
 
-Open a terminal for each script and leave each one running. The first
-argument always says where to run: **`sim`** (the Gazebo simulation) or
-**`real`** (the robot in the lab).
+**First, the robot.** In simulation, start it on this PC and leave it
+running:
 
-| Terminal | Command | What it starts | Ready when it prints |
-|---|---|---|---|
-| 1 | `run/1_robot.sh sim` or `real` | the arm and gripper drivers (in `sim`: the whole simulated cell) | `RG6 driver ready` (real: also `Robot connected to reverse interface`) |
-| 2 | `run/2_camera.sh sim` or `real` | the wrist camera | sim: `Creating GZ->ROS Bridge`, real: `RealSense Node Is Up!` |
-| 3 | `run/3_actions.sh sim` or `real` | the **action console**: you type one action at a time | `Ready.` and the prompt `action>` |
-| 3 (instead) | `run/4_goals.sh sim` or `real` | the **goal console**: you type a goal | `Ready.` and the prompt `goal>` |
-| 3 (instead) | `run/workspace_view.sh sim` or `real` | the **workspace view**: the camera with SAM 3's masks, and the arm's joints as they change, to find the [observation configuration](#the-observation-configuration) (it never moves the arm) | `OBSERVATION_JOINTS = [...]`, updating |
+```console
+run/sim.sh                  # Gazebo: the arm, the gripper and the wrist camera; ready at "RG6 driver ready (sim)"
+```
 
-* Run **either** the action console **or** the goal console, not both: each
-  one drives the robot. To switch, quit one (Ctrl-D) and start the other;
-  terminals 1 and 2 keep running.
+On the real robot, its drivers and the camera run on other computers of the
+lab (air and guest): [Run it on the real robot](#run-it-on-the-real-robot).
+
+**Then, in another terminal, one of these.** The first argument says where:
+**`sim`** (the Gazebo simulation) or **`real`** (the robot in the lab).
+
+| Command | What it starts | Ready when it prints |
+|---|---|---|
+| `run/actions.sh sim` or `real` | the **action console**: you type one action at a time | `Ready.` and the prompt `action>` |
+| `run/goals.sh sim` or `real` | the **goal console**: you type a goal | `Ready.` and the prompt `goal>` |
+| `run/workspace_view.sh sim` or `real` | the **workspace view**: the camera with SAM 3's masks, and the arm's joints as they change, to find the [observation configuration](#the-observation-configuration) (it never moves the arm) | `OBSERVATION_JOINTS = [...]`, updating |
+
+* Run only **one** of them at a time: each console drives the robot. To
+  switch, quit one (Ctrl-D) and start the other; the robot keeps running.
 * All terminals must use the same `ROS_DOMAIN_ID`. Each script prints the
   one it uses; the lab PC sets 131 in `~/.bashrc`. Never run the simulation
   and the real robot on the same `ROS_DOMAIN_ID` at the same time.
 * The scripts set up everything they need themselves (ROS 2, this workspace,
   the Python environment of SAM 3), so they work from any directory, e.g.
-  `~/physAI-arm-ex/run/1_robot.sh sim`.
-* `--help` after `run/3_actions.sh sim` or `run/4_goals.sh sim` lists the
-  options.
+  `~/physAI-arm-ex/run/sim.sh`.
+* `--help` after `run/actions.sh sim` or `run/goals.sh sim` lists the
+  options; `run/sim.sh --help` shows how to start another scene.
 * How the scripts were tested (simulation, and the real-robot mode without
   the robot): [verification/README.md](verification/README.md#2026-10-14-the-consoles-and-the-depth-obstacle-model).
 
@@ -82,7 +88,7 @@ Everything the robot decides is in
 These files are plain Python: no ROS. The rest of the code (the consoles,
 the camera, SAM 3, MoveIt's `move_group`, the drivers) calls them, so a
 change there shows up the next time a console runs, in simulation or on the
-robot (after `colcon build`, which `run/0_setup.sh` did; the files are
+robot (after `colcon build`, which `run/setup.sh` did; the files are
 linked, so editing them needs no new build).
 
 | File | Function | What it does | Called by |
@@ -170,7 +176,7 @@ the whole blue board, with the basket anywhere on it, close enough for SAM 3
 to recognise every item, and the arm must stand there (also holding an item)
 without touching the table or the wall.
 
-To find it, with the robot and the camera running (terminals 1 and 2):
+To find it, with the robot and the camera running ([Run it](#run-it)):
 
 ```console
 run/workspace_view.sh real
@@ -224,16 +230,16 @@ Then, as any user:
 ```console
 git clone https://github.com/guyazran/physAI-arm-ex.git
 cd physAI-arm-ex
-run/0_setup.sh
+run/setup.sh
 ```
 
 Clone it into any directory, under any name: the code and the scripts find
 the workspace from their own location. The commands in this README run in
 the clone's top directory (the one with `run/` and `src/`). Moving it after
 the setup breaks `.venv` and the build (they hold absolute paths): delete
-`.venv/`, `build/`, `install/` and `log/` there and run `run/0_setup.sh` again.
+`.venv/`, `build/`, `install/` and `log/` there and run `run/setup.sh` again.
 
-`run/0_setup.sh` does the rest, without `sudo`, and skips what is done
+`run/setup.sh` does the rest, without `sudo`, and skips what is done
 already:
 
 1. checks the system packages above (if some are missing, it prints the
@@ -263,7 +269,7 @@ already:
   outputs (`runs/`, `videos/`, logs) are git-ignored.
 * The `run/` scripts source ROS 2, `install/setup.bash` and the `.venv`
   themselves; nothing has to go into `~/.bashrc`.
-* **After pulling new code,** run `run/0_setup.sh` again (new packages,
+* **After pulling new code,** run `run/setup.sh` again (new packages,
   added or renamed files). Edits to the YAML files and the Python
   code take effect without rebuilding (`--symlink-install`).
 * The other two computers (air and guest) need **no build**: see
@@ -274,19 +280,18 @@ already:
 In the clone's top directory:
 
 ```console
-run/1_robot.sh sim          # terminal 1: wait for "RG6 driver ready"
-run/2_camera.sh sim         # terminal 2
-run/3_actions.sh sim        # terminal 3: the action console ...
-run/4_goals.sh sim          #             ... or the goal console
+run/sim.sh                  # terminal 1: wait for "RG6 driver ready (sim)"
+run/actions.sh sim          # terminal 2: the action console ...
+run/goals.sh sim            #             ... or the goal console
 ```
 
-* The Gazebo window shows the cell. Add `gui:=false` after `sim` in terminal
-  1 to run without it.
+* The Gazebo window shows the cell. `run/sim.sh gui:=false` runs without
+  it.
 * The simulated cell starts with **all twelve items on the table**, the
   basket empty and the gripper empty (the scene
   [`problems/all_on_table`](problems/all_on_table)). That is what the goal
   console assumes when it starts.
-* Another scene: `run/1_robot.sh sim t_newcell_1` (any directory name in
+* Another scene: `run/sim.sh t_newcell_1` (any directory name in
   `problems/`, `problems_tamp/` or `problems_gen/`).
 * **To start again from the beginning,** stop all terminals (Ctrl-C) and
   start them again from terminal 1. The simulation then starts from its scene
@@ -304,7 +309,7 @@ lab's allocation for this project):
 | **air** (`ssh air@10.10.34.14`) | 1. the UR driver | `ros-humble-ur` (apt) |
 | **air**, second terminal | 3. the RG6 gripper driver | this repository (no build) |
 | **guest** (`ssh guest@132.68.35.80`) | 2. the RealSense (plugged in there) | `ros-humble-realsense2-camera` (apt) |
-| **this PC** | the consoles (SAM 3 needs its GPU) | this repository, set up with [`run/0_setup.sh`](#build-once) |
+| **this PC** | the consoles (SAM 3 needs its GPU) | this repository, set up with [`run/setup.sh`](#build-once) |
 
 **Before starting any of the drivers,** in every terminal on air and on
 guest (their login shells set up neither ROS nor the domain):
@@ -382,7 +387,7 @@ Ready when it prints `RG6 driver ready (onrobot)`.
 * Its driver runs on air because air is wired to the robot's network. This
   PC reaches it only over Wi-Fi, where the XML-RPC calls time out and the
   console then finds no gripper reading.
-* Run only one RG6 driver: not also `run/1_robot.sh real` on this PC.
+* Run only one RG6 driver: not also `real.launch.py` on this PC.
 
 ### Then, on this PC
 
@@ -412,19 +417,15 @@ python3 src/lab_replica/tools/calibrate_wrist_camera.py solve runs/calib_<date> 
 
 1. Start the UR driver and the RG6 driver on air and the camera on guest
    ([1](#1-the-ur-driver-on-air), [2](#2-the-realsense-on-guest),
-   [3](#3-the-rg6-gripper-driver-on-air) above), press **Play** on the pendant. These replace
-   `run/1_robot.sh real` and `run/2_camera.sh real` on this PC (those are
-   for a set-up where the robot is wired to this PC and the camera plugged
-   in here; with `ur_driver: false` in `real_robot.yaml`, `run/1_robot.sh
-   real` starts only an RG6 driver).
+   [3](#3-the-rg6-gripper-driver-on-air) above), press **Play** on the pendant.
 2. **The scene.** For the goal console: every item on the board, the
    basket empty (anywhere on the board), the gripper empty. Leave at least
    2 cm between items.
 3. **On this PC:** the action console **or** the goal console, slowly at
    first:
    ```console
-   run/3_actions.sh real --speed-scale 0.3                # the action console, or ...
-   run/4_goals.sh real --speed-scale 0.3 --step           # ... the goal console (--step: Enter before every action)
+   run/actions.sh real --speed-scale 0.3                  # the action console, or ...
+   run/goals.sh real --speed-scale 0.3 --step             # ... the goal console (--step: Enter before every action)
    ```
 
 **Safety.** Keep a hand on the emergency stop. **Ctrl-C** in the console terminal
@@ -435,7 +436,7 @@ prompt quits. The pendant's speed slider scales every motion, on top of
 ## The action console
 
 ```text
-$ run/3_actions.sh sim
+$ run/actions.sh sim
 lab-tamp: action console  (simulation)
   connecting to the arm and the gripper ... ok (controller joint_trajectory_controller)
   loading SAM 3 (the segmentation model) ... ok (7 s)
@@ -579,7 +580,7 @@ put-in-basket and put-on-table worked for both.
 ## The goal console
 
 ```text
-$ run/4_goals.sh sim
+$ run/goals.sh sim
 lab-tamp: goal console  (simulation)
   connecting to the arm and the gripper ... ok (controller joint_trajectory_controller)
   loading SAM 3 (the segmentation model) ... ok (5 s)
@@ -758,9 +759,9 @@ items:
 
 | Message | What to do |
 |---|---|
-| `no arm: ... Is the robot running?` | start terminal 1 (real: press Play on the pendant); check `ROS_DOMAIN_ID` |
-| `no camera images on /camera/camera/...` | start terminal 2; check `ros2 topic hz /camera/camera/color/image_raw` |
-| `No RealSense devices were found!` (terminal 2) | the camera is not plugged in, or not into a USB 3 port; replug it, then restart terminal 2 |
+| `no arm: ... Is the robot running?` | start `run/sim.sh` (real: the UR driver on air, and press Play on the pendant); check `ROS_DOMAIN_ID` |
+| `no camera images on /camera/camera/...` | start `run/sim.sh` (real: the RealSense on guest); check `ros2 topic hz /camera/camera/color/image_raw` |
+| `No RealSense devices were found!` (on guest) | the camera is not plugged in, or not into a USB 3 port; replug it, then restart the RealSense node |
 | `invalid action string: ...`, `invalid goal: ...` | a typo: the message says what is wrong |
 | `action failed: X not found` | SAM 3 did not recognise X (e.g. hidden behind a taller item); look at the camera view in the run directory; the prompts are in `config/perception.yaml` |
 | `action failed: cannot pick: MoveIt's Cartesian path gets only N% of the way` | the fingers would touch a neighbouring item on the way down, for every grasp tried; move items a little apart |
@@ -813,7 +814,7 @@ the Unified Planning Framework with Fast Downward.
 
 ### T.1 Install (once, on top of sections 1 and A.1)
 
-Nothing more: [`run/0_setup.sh`](#build-once) installs the
+Nothing more: [`run/setup.sh`](#build-once) installs the
 [Unified Planning Framework](https://github.com/aiplan4eu/unified-planning)
 (UPF) and its Fast Downward engine into the `.venv` (the engine's wheel
 brings Fast Downward with it, nothing to build). `requirements.txt` pins
@@ -945,11 +946,10 @@ same layout.
 For goals on the real robot, the [goal console](#the-goal-console) is the
 simpler way. `solve.py` can drive it too: set the items up as in the task's
 README.md (generated scenes give every item's place), start the robot and
-the camera ([Run it on the real robot](#run-it-on-the-real-robot), terminals
-1 and 2), then:
+the camera ([Run it on the real robot](#run-it-on-the-real-robot), the
+drivers on air and the camera on guest), then:
 
 ```console
-ros2 launch lab_replica real.launch.py                       # then Play on the teach pendant
 ros2 run lab_replica skill_server.py --speed-scale 0.3       # in the .venv
 ros2 run lab_replica solve.py --task <name> --attach --step
 ```
@@ -1013,7 +1013,7 @@ running at 1/4 of real time (a 14 s motion at 0.3 x real time timed out).
 
 ### A.1 Install (once, on top of section 1)
 
-Nothing more: [`run/0_setup.sh`](#build-once) makes the Python environment
+Nothing more: [`run/setup.sh`](#build-once) makes the Python environment
 (`.venv`, with `--system-site-packages` so that it also sees the ROS
 packages; [`requirements.txt`](requirements.txt)), takes the Hugging Face
 token (`.env`, git-ignored) and downloads SAM 3. Use the `.venv` for
@@ -1167,15 +1167,15 @@ Made so that the simulation and the real robot differ as little as possible:
 
 ### A.5 On the real robot
 
-See [Run it on the real robot](#run-it-on-the-real-robot) for the four
-scripts. For the skill server of A.2: the same commands with `real.launch.py`
-instead of `sim.launch.py` and `skill_server.py` without `--sim` (start with
-`--speed-scale 0.3`). Before that:
+See [Run it on the real robot](#run-it-on-the-real-robot) for the drivers
+and the consoles. For the skill server of A.2: the same commands without
+`sim.launch.py` (the drivers run on air and guest) and `skill_server.py`
+without `--sim` (start with `--speed-scale 0.3`). Before that:
 
 1. **Mount the camera** on the RG6 and run the RealSense driver with aligned
-   depth (`run/2_camera.sh real`, or
-   `ros2 launch realsense2_camera rs_launch.py align_depth.enable:=true` on any
-   machine of the ROS domain; check the topic names against
+   depth (`ros2 launch realsense2_camera rs_launch.py align_depth.enable:=true`
+   on any machine of the ROS domain, as on guest in
+   [2](#2-the-realsense-on-guest); check the topic names against
    config/perception.yaml).
 2. **Hand-eye calibration**: put the measured pose of the colour optical frame
    in rg6_base_link into cell.yaml `wrist_camera.optical_xyz/optical_rpy` (the
@@ -1294,11 +1294,11 @@ geometry; `videos/previous/`: the version before that. Recorded with
 
 ```console
 cd physAI-arm-ex                     # the clone
-run/0_setup.sh                       # see Build (once) at the top
+run/setup.sh                         # see Build (once) at the top
 source install/setup.bash            # in each terminal for the commands below
 ```
 
-Run `run/0_setup.sh` again when you add or rename files. Edits to the YAML
+Run `run/setup.sh` again when you add or rename files. Edits to the YAML
 files and the Python code take effect without rebuilding (`--symlink-install`).
 
 Every terminal must use the same `ROS_DOMAIN_ID` (the lab PC sets 131 in
@@ -1433,11 +1433,11 @@ and run it again.
 
 ```
 physAI-arm-ex/
-  run/                     THE FOUR SCRIPTS: 1_robot.sh, 2_camera.sh, 3_actions.sh, 4_goals.sh (env.sh: shared set-up);
-                           0_setup.sh; workspace_view.sh (find the observation configuration)
+  run/                     THE SCRIPTS: setup.sh (once), sim.sh (the simulated robot), actions.sh, goals.sh,
+                           workspace_view.sh (find the observation configuration); env.sh: shared set-up
   docs/                    pictures for this README
   problems/
-    all_on_table/          the default simulated scene of run/1_robot.sh sim: all twelve items on the table
+    all_on_table/          the default simulated scene of run/sim.sh: all twelve items on the table
     hardcoded_problem/     the task with the hard-coded solution (README.md: task, commands, table set-up)
     problem_006xx/         three more generated problems
   problems_gen/            generated problems (the old cell's, of the verification and the videos, are not in git)
@@ -1479,7 +1479,6 @@ physAI-arm-ex/
       sim.launch.py        the simulated cell
       real.launch.py       the real cell (ur_robot_driver + RG6 driver)
       moveit.launch.py     MoveIt's move_group (started by the consoles)
-      camera.launch.py     the wrist camera: the RealSense driver, or (sim:=true) the simulated one
     scripts/               the `ros2 run lab_replica ...` commands (below)
     tools/                 development and calibration tools (below)
     description/urdf/      robot description: UR + Quick Changer + RG6 + wrist RealSense
@@ -1492,8 +1491,8 @@ physAI-arm-ex/
 
 | Command | What it does |
 |---|---|
-| `action_console.py [--sim]` | the action console (normally started by `run/3_actions.sh`) |
-| `goal_console.py [--sim]` | the goal console (normally started by `run/4_goals.sh`) |
+| `action_console.py [--sim]` | the action console (normally started by `run/actions.sh`) |
+| `goal_console.py [--sim]` | the goal console (normally started by `run/goals.sh`) |
 | `workspace_view.py [--sim]` | the workspace view: camera + SAM 3 masks, the arm's joints (normally started by `run/workspace_view.sh`) |
 | `skill_server.py [--sim]` | the skills as a ROS 2 action, `/lab_skills/execute` (section A.2) |
 | `do_action.py "<action>" ...` | sends actions to the skill server |

@@ -207,6 +207,11 @@ def wrap_words(words, indent, width=100):
 
 # ---- the robot -------------------------------------------------------------------------------
 
+def _start_hint(sim, what):
+    """Where `what` (a driver or the camera) is started."""
+    return "run/sim.sh" if sim else f"{what}: README, \"Run it on the real robot\""
+
+
 class Robot:
     """The autonomous skills in this process: arm, gripper, wrist camera, SAM 3.
 
@@ -239,7 +244,7 @@ class Robot:
         try:
             controller = active_trajectory_controller(probe, timeout=30.0)
         except Exception as e:  # noqa: BLE001
-            raise SystemExit(f"\nno arm: {e}\n  Is the robot running? (run/1_robot.sh {'sim' if sim else 'real'})")
+            raise SystemExit(f"\nno arm: {e}\n  Is the robot running? ({_start_hint(sim, 'the UR driver')})")
         finally:
             probe.destroy_node()
         self.node = Executor(controller=controller, speed_scale=speed_scale)
@@ -249,7 +254,7 @@ class Robot:
             self.node.wait_ready(timeout=30.0)
         except Exception as e:  # noqa: BLE001
             raise SystemExit(f"\nno arm or gripper: {e}\n  Is the robot running? "
-                             f"(run/1_robot.sh {'sim' if sim else 'real'})")
+                             f"({_start_hint(sim, 'the UR and RG6 drivers')})")
         self._done(f"controller {controller}")
 
         step("loading SAM 3 (the segmentation model), starting MoveIt")
@@ -267,7 +272,7 @@ class Robot:
         try:
             self.holding = self.ex.holding()
         except Exception as e:  # noqa: BLE001
-            raise SystemExit(f"\n{e}\n  The gripper driver starts with run/1_robot.sh.")
+            raise SystemExit(f"\n{e}\n  Is the gripper driver running? ({_start_hint(sim, 'the RG6 driver')})")
         self._done("holding something" if self.holding else "empty")
 
         step("waiting for the wrist camera")
@@ -276,7 +281,7 @@ class Robot:
         except TimeoutError:
             raise SystemExit(f"\nno camera images on {self.ex.cfg['topics']['color']} and "
                              f"{self.ex.cfg['topics']['depth']}\n  Is the camera running? "
-                             f"(run/2_camera.sh {'sim' if sim else 'real'})")
+                             f"({_start_hint(sim, 'the RealSense node')})")
         self._done(f"{f.rgb.shape[1]} x {f.rgb.shape[0]}")
         self.ex.on_phase = self._phase
         self.added = []   # items added in this session (new-item:)
@@ -474,7 +479,7 @@ def warn_holding_added(term, robot):
 
 def common_arguments(ap):
     g = ap.add_argument_group("robot")
-    g.add_argument("--sim", action="store_true", help="the simulation (run/1_robot.sh sim): use its clock")
+    g.add_argument("--sim", action="store_true", help="the simulation (run/sim.sh): use its clock")
     g.add_argument("--speed-scale", type=float, default=1.0,
                    help="scale all motion speeds (e.g. 0.3 for a first run on the real robot)")
     g.add_argument("--no-home", action="store_true", help="do not return to the home pose after each action")

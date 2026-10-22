@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Type a PDDL action, and the robot performs it autonomously.
 
-    run/3_actions.sh sim|real                    (the usual way: sets up the environment)
+    run/actions.sh sim|real                      (the usual way: sets up the environment)
     ros2 run lab_replica action_console.py [--sim] [--speed-scale S]
 
-Needs the robot (run/1_robot.sh) and the wrist camera (run/2_camera.sh). Loads
-SAM 3 and, once the arm, the gripper and the camera answer, shows the
-actions, the items and a prompt. Each action is perceived, planned and
-executed by the skills (README section A.3); the answer is
+Needs the arm, the gripper and the wrist camera (run/sim.sh, or on the real
+robot their drivers: README, "Run it on the real robot"). Loads SAM 3 and,
+once the arm, the gripper and the camera answer, shows the actions, the items
+and a prompt. Each action is perceived, planned and executed by the skills
+(README section A.3); the answer is
 
     invalid action string: <why>     nothing was sent to the robot
     performing action                then, when it is over:

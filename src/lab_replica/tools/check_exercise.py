@@ -10,7 +10,7 @@ configuration) and compares.
 
 (In the clone's top directory, after `source /opt/ros/humble/setup.bash &&
 source install/setup.bash && source .venv/bin/activate`.) The motions
-themselves need MoveIt: try them in simulation (run/3_actions.sh sim).
+themselves need MoveIt: try them in simulation (run/actions.sh sim).
 Exits 1 if a check fails.
 """
 

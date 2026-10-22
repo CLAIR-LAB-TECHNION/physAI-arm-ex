@@ -8,11 +8,13 @@
 #   run/workspace_view.sh sim
 #   run/workspace_view.sh real [--min-score 0.3]
 #
-# Needs steps 1 and 2 running; instead of step 3. More options:
-# run/workspace_view.sh sim --help
+# Needs run/sim.sh (sim) or the robot's drivers and camera (real) running;
+# instead of a console. More options: run/workspace_view.sh sim --help
 
 source "$(dirname "$0")/env.sh"
+read_mode "$@"
 shift
+banner
 use_venv
 
 if [ "$MODE" = sim ]; then

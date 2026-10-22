@@ -18,8 +18,7 @@ controller: passthrough_trajectory_controller
 # URCap on the controller, which serves XML-RPC on this port of `ip`.
 gripper_port: 41414
 
-# true: real.launch.py (run/1_robot.sh real) starts the UR driver on this
-# computer. false: it only starts the RG6 driver; the UR driver runs on
-# another computer of the same ROS_DOMAIN_ID. In the lab it runs on "air":
+# true: real.launch.py starts the UR driver on this computer. false: it
+# only starts the RG6 driver; the UR driver runs on another computer of the same ROS_DOMAIN_ID. In the lab it runs on "air":
 #   ros2 launch ur_robot_driver ur_control.launch.py ur_type:=ur5e robot_ip:=10.240.10.4 initial_joint_controller:=passthrough_trajectory_controller
 ur_driver: false

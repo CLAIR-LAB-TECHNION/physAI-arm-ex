@@ -5,8 +5,9 @@ where the arm stands, and the arm's joints.
     run/workspace_view.sh sim|real               (the usual way: sets up the environment)
     ros2 run lab_replica workspace_view.py [--min-score S]
 
-Needs the robot (run/1_robot.sh: only its joint states, the arm is never
-moved from here) and the wrist camera (run/2_camera.sh). A window shows
+Needs the arm (only its joint states: it is never moved from here) and the
+wrist camera (run/sim.sh, or on the real robot their drivers: README, "Run it
+on the real robot"). A window shows
 
     top:     the camera live, colour and depth side by side
     bottom:  the same images with SAM 3's masks of the items and the basket
@@ -176,7 +177,7 @@ class Joints:
 
     def text(self, q):
         if q is None:
-            return ["arm: no /joint_states yet (is run/1_robot.sh running?)"]
+            return ["arm: no /joint_states yet (is the robot running?)"]
         T = self.pose(q)
         tilt = np.degrees(np.arccos(np.clip(-T[2, 2], -1.0, 1.0)))
         return ["OBSERVATION_JOINTS = [" + ", ".join(f"{v:.4f}" for v in q) + "]",
@@ -224,7 +225,7 @@ def compose(live, seg, seg_state, status, n_items, min_score):
     if live is not None:
         canvas[y:y + PANEL_H, :PANEL_W], canvas[y:y + PANEL_H, PANEL_W:] = live
     else:
-        _text(canvas, "no camera image yet (is run/2_camera.sh running?)", (W // 2 - 260, y + PANEL_H // 2), 0.7, 2)
+        _text(canvas, "no camera image yet (is the camera running?)", (W // 2 - 260, y + PANEL_H // 2), 0.7, 2)
     y += PANEL_H
     missing = None
     if seg is not None:

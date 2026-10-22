@@ -1,6 +1,6 @@
 # The Python packages of the .venv, on top of ROS 2 Humble and Ubuntu 22.04's
 # own Python packages, which the .venv also sees (--system-site-packages).
-# run/0_setup.sh installs them; by hand:
+# run/setup.sh installs them; by hand:
 #
 #   python3 -m venv --system-site-packages .venv
 #   .venv/bin/pip install -r requirements.txt

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Type a goal; the robot plans the actions (UPF + Fast Downward) and performs them.
 
-    run/4_goals.sh sim|real                      (the usual way: sets up the environment)
+    run/goals.sh sim|real                        (the usual way: sets up the environment)
     ros2 run lab_replica goal_console.py [--sim] [--speed-scale S] [--step]
 
-Needs the robot (run/1_robot.sh) and the wrist camera (run/2_camera.sh). Loads
-SAM 3 and, once the arm, the gripper and the camera answer, shows the state,
-how to write a goal, and a prompt.
+Needs the arm, the gripper and the wrist camera (run/sim.sh, or on the real
+robot their drivers: README, "Run it on the real robot"). Loads SAM 3 and,
+once the arm, the gripper and the camera answer, shows the state, how to write
+a goal, and a prompt.
 
 The items are the objects of the exercise's problem file
 (src/lab_replica/lab_replica/exercise/task_planning/problem.pddl); each goal

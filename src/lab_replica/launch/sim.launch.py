@@ -13,9 +13,7 @@ Arguments:
                  desktop (xrdp) the display only has software OpenGL, which
                  costs about two CPU cores for the GUI and slows the physics.
   camera_bridge  bridge /lab_camera/image to ROS (default true)
-  wrist_camera   bridge the wrist RealSense's images to ROS (default true;
-                 false: start them separately with camera.launch.py sim:=true,
-                 as run/1_robot.sh and run/2_camera.sh do)
+  wrist_camera   bridge the wrist RealSense's images to ROS (default true)
   wrist_camera_rate  update rate of the wrist RealSense [Hz] (default: cell.yaml)
 
 Once up (the same interface as real.launch.py):
@@ -45,10 +43,10 @@ from lab_replica import config
 VGLRUN = "/opt/VirtualGL/bin/vglrun"
 
 
-def wrist_camera_bridge(output="log"):
+def wrist_camera_bridge():
     """The simulated wrist RealSense under the topic names of the realsense2_camera driver."""
     rs = "/camera/camera"
-    return Node(package="ros_gz_bridge", executable="parameter_bridge", name="wrist_camera_bridge", output=output,
+    return Node(package="ros_gz_bridge", executable="parameter_bridge", name="wrist_camera_bridge", output="log",
                 arguments=["/wrist_camera/image@sensor_msgs/msg/Image[ignition.msgs.Image",
                            "/wrist_camera/depth_image@sensor_msgs/msg/Image[ignition.msgs.Image",
                            "/wrist_camera/camera_info@sensor_msgs/msg/CameraInfo[ignition.msgs.CameraInfo"],

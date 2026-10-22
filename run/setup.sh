@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Step 0, once (and again after pulling new code): set up this PC to run the
+# Once (and again after pulling new code): set up this PC to run the
 # consoles. Needs no sudo. Every step skips what is done already:
 #
 #   1. a check of the system packages (it installs none: if some are
@@ -9,7 +9,7 @@
 #   4. the ROS workspace (colcon build)
 #   5. a check that everything is in place
 #
-#   run/0_setup.sh [--no-model] [--fresh-venv]
+#   run/setup.sh [--no-model] [--fresh-venv]
 #
 #   --no-model    do not download SAM 3 now (it is downloaded on first use)
 #   --fresh-venv  delete .venv and make it again
@@ -20,7 +20,7 @@
 # Face token is taken from .env, else from $HF_TOKEN, else asked for.
 
 set -eo pipefail
-trap 'echo "ERROR: run/0_setup.sh stopped at line $LINENO, in: $BASH_COMMAND" >&2' ERR
+trap 'echo "ERROR: run/setup.sh stopped at line $LINENO, in: $BASH_COMMAND" >&2' ERR
 
 WS="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV="$WS/.venv"
@@ -45,7 +45,7 @@ for a in "$@"; do
         --no-model) MODEL=0 ;;
         --fresh-venv) FRESH=1 ;;
         -h|--help) sed -n '2,/^$/s/^# \{0,1\}//p' "$0"; exit 0 ;;
-        *) echo "unknown option $a (see run/0_setup.sh --help)"; exit 2 ;;
+        *) echo "unknown option $a (see run/setup.sh --help)"; exit 2 ;;
     esac
 done
 
@@ -77,7 +77,7 @@ if [ $FRESH -eq 1 ] && [ -d "$VENV" ]; then
     rm -rf "$VENV"
 fi
 if [ -d "$VENV" ] && ! grep -q "include-system-site-packages = true" "$VENV/pyvenv.cfg" 2>/dev/null; then
-    fail ".venv does not see the ROS packages (made without --system-site-packages): run/0_setup.sh --fresh-venv"
+    fail ".venv does not see the ROS packages (made without --system-site-packages): run/setup.sh --fresh-venv"
 fi
 if [ ! -x "$VENV/bin/python" ]; then
     python3 -m venv --system-site-packages "$VENV"
@@ -136,13 +136,13 @@ try:
     print(f"in the Hugging Face cache: {path}")
 except Exception:  # noqa: BLE001  (not cached yet)
     if token is None:
-        sys.exit("ERROR: no Hugging Face token: SAM 3 cannot be downloaded (run/0_setup.sh again to give one)")
+        sys.exit("ERROR: no Hugging Face token: SAM 3 cannot be downloaded (run/setup.sh again to give one)")
     print("downloading (3.4 GB) ...")
     try:
         path = snapshot_download(model, allow_patterns=files, token=token)
     except (GatedRepoError, RepositoryNotFoundError):
         sys.exit(f"ERROR: this token cannot read {model}: a wrong token, or the licence is not accepted yet "
-                 f"(https://huggingface.co/{model}); run/0_setup.sh again for another token")
+                 f"(https://huggingface.co/{model}); run/setup.sh again for another token")
     print(f"downloaded to {path}")
 EOF
 else
@@ -183,11 +183,12 @@ gpu = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "NO GPU (C
 print(f"torch {torch.__version__}, CUDA: {gpu}; transformers {transformers.__version__}")
 if not torch.cuda.is_available():
     print("WARNING: torch cannot use the GPU, so SAM 3 would run on the CPU, far too slowly. "
-          "Check nvidia-smi (after a driver update: reboot), then run run/0_setup.sh again.")
+          "Check nvidia-smi (after a driver update: reboot), then run run/setup.sh again.")
 plan = task.solve(task.most_permissive_init(), parse_goal("(in-basket green-mug)")[0])
 print(f"planner (UPF, {planner.ENGINE}): (in-basket green-mug) -> {' '.join(plan)}")
 EOF
 
 echo
-echo "Set up. Next, with the robot's drivers and the camera running on their computers:"
-echo "  run/3_actions.sh real    or    run/4_goals.sh real    (README, \"Run it on the real robot\")"
+echo "Set up. Next, in simulation:  run/sim.sh, then in another terminal  run/actions.sh sim  or  run/goals.sh sim"
+echo "On the real robot, with its drivers and the camera running on their computers:"
+echo "  run/actions.sh real    or    run/goals.sh real    (README, \"Run it on the real robot\")"
