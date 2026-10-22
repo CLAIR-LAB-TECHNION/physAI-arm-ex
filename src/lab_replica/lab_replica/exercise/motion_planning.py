@@ -179,11 +179,11 @@ def plan_view(moveit, q0, T_cam, T_grip_cam, width, held=None, label="look"):
 
 
 def plan_observation(moveit, q0, q_obs, width, held=None, label="look"):
-    """The steps that move the arm to the observation configuration q_obs
-    (state_estimation.OBSERVATION_JOINTS). Raises PlanError saying what the arm would touch
-    there."""
+    """The steps that move the arm to the configuration q_obs a survey looks
+    from (state_estimation.OBSERVATION_JOINTS, ...). Raises PlanError saying
+    what the arm would touch there."""
     if not moveit.is_valid(q_obs, width, held):
-        raise PlanError("at the observation configuration the robot would touch "
+        raise PlanError("at the configuration to look from the robot would touch "
                         + (", ".join(moveit.contacts(q_obs, width, held)) or "something"))
     return [trajectory(label, plan_path(moveit, q0, q_obs, width, held))]
 

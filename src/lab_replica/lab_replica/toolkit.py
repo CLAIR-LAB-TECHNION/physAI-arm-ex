@@ -6,7 +6,8 @@ needs ROS. (The skills also get the robot itself: autonomy/executive.py.)
 Data types
     Placement     where an item rests: item, rest (resting pose), x, y, yaw, support, z_support
     Estimate      an item's estimated Placement, with plausibility, n_points, top_z, notes
-    Detection     an item found in a frame: item, score, sam_score, estimate, mask, view, frame
+    Detection     an item found in a frame: item, score, sam_score, estimate, mask, view, frame,
+                  geometry_frame (the frame its estimate comes from, when not `frame`)
     ImageGrasp    a top-down grasp in an image: pixel (u, v), closing angle, width in pixels
     Grasp         a top-down grasp in the world: pose of rg6_base_link, width, tips_z, top_z
     Held          how the gripper holds an item: item, rest, width, tip_z, offset_obj, yaw_rel, top
@@ -27,6 +28,8 @@ Items
 
 Robot and geometry
     ARM_JOINTS, ik_all(T), fk(q), joint_limits(), gripper_pose(x, y, z, yaw),
+    look_at(eye, target, up), down_view(x, y, height, up)   camera poses (for robot.survey)
+    hand_eye()   the camera's optical frame in the gripper's frame (rg6_base_link)
     rg6 (depth_from_width, free_height, MAX_WIDTH, ...), finger_footprints,
     object_box, placement_pose, polygons_intersect, polygon_inside_rect,
     rpy_to_matrix, wrap
@@ -67,11 +70,12 @@ from .robot.kinematics import ARM_JOINTS, URKinematics
 from .transforms import rpy_to_matrix, wrap
 
 __all__ = ["ARM_JOINTS", "ActionError", "Box", "Cylinder", "Detection", "Estimate", "Grasp", "Held", "ImageGrasp",
-           "PlanError", "Placement", "box_in_world", "estimate_item", "finger_footprints", "fk", "gauss",
-           "gripper_pose", "gripper_step", "ik_all", "joint_limits", "make_item", "mask_overlap", "measure_item",
-           "model_height_map", "object_box", "placement_pose", "polygon_inside_rect", "polygons_intersect",
-           "rect_fit", "rg6", "robust_top", "rpy_to_matrix", "show_detections", "show_drop", "show_grasp",
-           "show_image_grasps", "show_masks", "show_new_item", "show_table_spot", "spread", "trajectory", "wrap"]
+           "Placement", "PlanError", "box_in_world", "down_view", "estimate_item", "finger_footprints", "fk", "gauss",
+           "gripper_pose", "gripper_step", "hand_eye", "ik_all", "joint_limits", "look_at", "make_item",
+           "mask_overlap", "measure_item", "model_height_map", "object_box", "placement_pose", "polygon_inside_rect",
+           "polygons_intersect", "rect_fit", "rg6", "robust_top", "rpy_to_matrix", "show_detections", "show_drop",
+           "show_grasp", "show_image_grasps", "show_masks", "show_new_item", "show_table_spot", "spread", "trajectory",
+           "wrap"]
 
 
 class ActionError(RuntimeError):
@@ -139,6 +143,32 @@ def joint_limits():
     """{joint name: (lower, upper)} of the arm joints [rad]."""
     lim = _kinematics().chain.limits
     return {j: lim.get(j, (-2 * math.pi, 2 * math.pi)) for j in ARM_JOINTS}
+
+
+def look_at(eye, target, up=(0.0, 0.0, 1.0)):
+    """The world pose (4x4) of the camera's optical frame (z along the view,
+    x to the right in the image, y down) at `eye` looking at `target`, with
+    the world direction `up` pointing up in the image."""
+    from .autonomy.views import look_at as _look_at
+    return _look_at(eye, target, up)
+
+
+def down_view(x, y, height, up=(0.0, -1.0, 0.0)):
+    """The camera's pose straight above (x, y), `height` above the table
+    (world z = 0), looking down, with the world direction `up` up in the image."""
+    return look_at((x, y, height), (x, y, 0.0), up)
+
+
+@functools.lru_cache(maxsize=1)
+def _hand_eye():
+    from .autonomy.views import hand_eye as _he
+    return _he(config.load_cell()["robot"]["ur_type"])
+
+
+def hand_eye():
+    """The camera's optical frame in the frame of rg6_base_link (4x4): the
+    gripper's pose for a camera pose T is T @ inv(hand_eye())."""
+    return _hand_eye().copy()
 
 
 def box_in_world(box, q):

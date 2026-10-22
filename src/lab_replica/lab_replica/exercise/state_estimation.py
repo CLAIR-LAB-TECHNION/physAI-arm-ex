@@ -6,6 +6,8 @@ camera and asks SAM 3 for every item by name. Each answer is a mask (a
 boolean image) with a score. These functions turn them into the scene:
 
     OBSERVATION_JOINTS   the arm's joints from which the camera sees the whole workspace
+    SIDE_VIEW            a camera pose looking at the workspace at an angle
+    close_views          camera poses looking straight down at a spot from closer
     pixels_to_world      depth pixels -> 3D points in the world frame
     estimate_placement   one item's points and those around it -> where and how it rests
                          (height_map, pose_cost, fit_pose: its model matched to the points)
@@ -27,18 +29,25 @@ import math
 import cv2
 import numpy as np
 
-from ..toolkit import (Estimate, Grasp, ImageGrasp, Placement, gauss, gripper_pose, mask_overlap, model_height_map,
-                       rect_fit, rg6, robust_top, wrap)
+from ..toolkit import (Estimate, Grasp, ImageGrasp, Placement, down_view, gauss, gripper_pose, hand_eye, look_at,
+                       mask_overlap, model_height_map, rect_fit, rg6, robust_top, wrap)
 
 # ---- where the camera looks from ----------------------------------------------------------
 
+# The camera looks with robot.survey(view, scene=None, ...): `view` is either
+# the arm's six joints or a pose of the camera (4x4, its optical frame in
+# the world), or a list of them (the first reachable is used). Given the
+# scene of earlier views, survey adds what the new view sees to it: an item
+# is recognised from any view, and its position comes from the view that sees
+# it best (straight down and close).
+#
 # The observation configuration: the arm's joints [rad] (shoulder_pan,
 # shoulder_lift, elbow, wrist_1, wrist_2, wrist_3) from which the wrist
 # camera sees the whole workspace. Every action starts by looking from here
-# (robot.survey): SAM 3 finds the items and the basket in this one image, so
-# from here the camera must see all of the blue board (0.70 x 0.59 m), with a
-# basket anywhere on it and the items in it, without the gripper or the arm
-# in the way. Seen from too far away, the items get small and SAM 3 misses
+# (robot.survey(OBSERVATION_JOINTS)): SAM 3 finds the items and the basket
+# in this one image, so from here the camera must see all of the blue board
+# (0.70 x 0.59 m), with a basket anywhere on it and the items in it, without
+# the gripper or the arm in the way. Seen from too far away, the items get small and SAM 3 misses
 # them; from too close, the board's edges are out of the image. The arm must
 # also be able to stand here holding an item (the put actions look from here
 # too) without touching the table or the wall.
@@ -47,7 +56,32 @@ from ..toolkit import (Estimate, Grasp, ImageGrasp, Placement, gauss, gripper_po
 # with SAM 3's masks of the items, and prints the arm's joints as they
 # change. Move the arm by hand (freedrive on the teach pendant) until the
 # camera sees everything, and copy the joints here.
+#
+# One view may not be enough: seen from straight above, some items are hard
+# for SAM 3 to name, and from 80 cm away the depth is only so accurate. Other
+# views can be found by hand like this one (more joints), or computed (camera
+# poses: toolkit.look_at, toolkit.down_view); the skills decide when to look
+# again (skills.py).
 OBSERVATION_JOINTS = [3.0639, -1.4663, 0.6068, -0.7806, -1.5469, 1.5027]
+
+# From the front at an angle: SAM 3 names items it does not recognise from
+# straight above (the blue cup's yellow stripe is on its side, the spray
+# bottle is a grey head on a red blob from above).
+SIDE_VIEW = look_at(eye=(0.40, -0.25, 0.70), target=(0.40, 0.03, 0.0))
+
+CLOSE_HEIGHT = 0.50     # a closer look: the camera this high above the table [m]
+
+
+def close_views(x, y, height=CLOSE_HEIGHT):
+    """Camera poses straight above (x, y), `height` above the table, looking
+    down, turned about the vertical in steps of 45 degrees: the camera is
+    beside the gripper, so turning moves the gripper around the spot, and
+    some turns put the arm where it cannot be. The turns that put the gripper
+    farthest from the robot's base axis come first: near the base the arm
+    folds over its own shoulder, low over the table."""
+    T_cam_grip = np.linalg.inv(hand_eye())
+    poses = [down_view(x, y, height, (math.cos(a), math.sin(a), 0.0)) for a in np.arange(8) * math.pi / 4]
+    return sorted(poses, key=lambda T: -math.hypot(*(T @ T_cam_grip)[:2, 3]))
 
 
 # ---- from pixels to the world -------------------------------------------------------------

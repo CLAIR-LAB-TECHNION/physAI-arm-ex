@@ -9,31 +9,13 @@ topics:
   depth: /camera/camera/aligned_depth_to_color/image_raw
   info: /camera/camera/color/camera_info
 
-# Where the camera looks from before every action: the arm's joints
-# OBSERVATION_JOINTS in lab_replica/exercise/state_estimation.py, from which
-# the camera sees the whole blue board (0.70 x 0.59 m) and a basket anywhere
-# on it. Problem generation keeps items and the basket inside that view
-# (problems/generator.py SurveyViews).
-
-# Views of the same region from other angles, taken before a pick-up only
-# when the observation view did not recognise the item to pick (SAM 3 score x
-# plausibility below recognition_min_score). From straight above some items
-# are hard to name (the spray bottle is a grey head on a red blob); from the
-# front at an angle SAM 3 recognises them. Per item, the detection with the
-# highest score x `weight` is used; the geometry still comes from the
-# observation view. Each view: the camera at `eye` looking at `target`, `up`
-# the world direction that is up in the image.
-recognition_views:
-  - {name: front, eye: [0.40, -0.25, 0.70], target: [0.40, 0.03, 0.0], up: [0.0, 0.0, 1.0], weight: 0.7}
-recognition_min_score: 0.5
-
-# Before a pick the camera also looks at the item from closer, straight
-# down from `height` above the table, and the item's pose is taken from that
-# view (smaller errors from the depth and the hand-eye calibration).
-close_look:
-  enabled: true
-  height: 0.50
-  weight: 1.2
+# Where the camera looks from is up to the skills (lab_replica/exercise/
+# skills.py): every action surveys from the arm's joints OBSERVATION_JOINTS in
+# lab_replica/exercise/state_estimation.py, from which the camera sees the
+# whole blue board (0.70 x 0.59 m) and a basket anywhere on it; a pick-up
+# also looks from the side (SIDE_VIEW) when the item is not recognised from
+# above, and from closer (close_views). Problem generation keeps items and
+# the basket inside the observation view (problems/generator.py SurveyViews).
 
 # Spots tried (each motion-planned) when putting an item down.
 put_max_tries: 80

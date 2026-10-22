@@ -36,20 +36,18 @@ from .. import config, objects
 from ..exercise import misc
 from ..exercise import motion_planning as mp
 from ..exercise import skills
-from ..exercise import state_estimation as se
 from ..exercise.task_planning.planning import DOMAIN_FILE
 from ..moveit_client import MoveIt
 from ..perception.rgbd import RGBDCamera
-from ..perception.scene import ScenePerception, load_perception_config
+from ..perception.scene import TOP_DOWN_TILT, ScenePerception, load_perception_config, view_rank
 from ..planning.motion import PlanError
 from ..planning.placement import Held, Placement
 from ..robot import rg6
 from ..toolkit import ActionError, box_in_world, fk, show_detections, show_masks
-from ..transforms import inv_tf
 from . import annotate
 from .depth_world import DepthWorld
 from .drop import drop_spots
-from .views import down_view, hand_eye, view_from_config
+from .views import hand_eye
 
 
 @dataclass
@@ -59,6 +57,14 @@ class HeldItem:
     source: Placement = None  # where it was picked up
     assumed: bool = False   # not seen being picked: nominal grasp assumed
     depth_before: object = None  # DepthWorld of the survey before the pick-up (not saved)
+
+
+def describe_view(frame, table_z):
+    """Where a frame was taken from, in words."""
+    T = frame.T_world_cam
+    tilt = math.degrees(math.acos(float(np.clip(-T[2, 2], -1.0, 1.0))))
+    how = "looking straight down" if tilt <= TOP_DOWN_TILT else f"looking {tilt:.0f} deg from straight down"
+    return f"camera at ({T[0, 3]:.2f}, {T[1, 3]:.2f}), {100 * (T[2, 3] - table_z):.0f} cm above the table, {how}"
 
 
 def domain_actions(domain_file=DOMAIN_FILE):
@@ -138,11 +144,6 @@ class ActionExecutive:
         self.on_observation = None   # f(colour BGR, depth BGR, title) for each annotated view
         self.action = ""
         self.home = np.array(self.cell["robot"]["home_joints"], float)
-        q_obs = np.asarray(se.OBSERVATION_JOINTS, float)
-        if q_obs.shape != (6,):
-            raise ActionError(f"exercise/state_estimation.py: OBSERVATION_JOINTS must be the arm's six joints, "
-                              f"not {se.OBSERVATION_JOINTS!r}")
-        self.survey_views = [{"name": "top", "joints": q_obs, "weight": 1.0}]
         self.actions = domain_actions()
         self.skills = skill_functions(self.actions)
         self._moved = False      # the skill ran steps (robot.run) in this action
@@ -287,67 +288,71 @@ class ActionExecutive:
                                 rgb=frame.rgb, depth=frame.depth, K=frame.K, T=frame.T_world_cam, q=q)
         return frame
 
-    def look(self, T_cam, held, label, exclude=()):
-        """Move the camera to T_cam (the exercise's plan_view) and take a
-        frame. The motion keeps clear of what the camera saw last (the last
-        scene, without the items in `exclude`), unless that blocks every way:
-        it may have changed since."""
-        return self._look(lambda q, box: mp.plan_view(self.mv, q, T_cam, self.T_grip_cam, self.width(), box, label),
-                          held, exclude)
-
-    def look_from(self, q_obs, held, label, exclude=()):
-        """Move the arm to the joints q_obs (the exercise's plan_observation)
-        and take a frame; keeps clear of what was seen like look()."""
-        return self._look(lambda q, box: mp.plan_observation(self.mv, q, q_obs, self.width(), box, label),
-                          held, exclude)
-
-    def _look(self, plan, held, exclude):
-        q = self.node.current()
+    def _move_to_view(self, alternatives, held, exclude, label):
+        """Move the camera to the first reachable of `alternatives` (joints
+        or camera poses) and take a frame. The motion keeps clear of what the
+        camera saw last (the last scene, without the items in `exclude`),
+        unless that blocks every way: it may have changed since."""
         box = self.held_box(held)
-        try:
-            self.set_obstacles(self.scene, exclude=exclude)
-            steps = plan(q, box)
-        except PlanError as e:
-            if not self.obstacles:
-                raise
-            self.log(f"  {e}; looking without what was seen before")
+
+        def plan(a):
+            q = self.node.current()
+            if a.shape == (6,):
+                return mp.plan_observation(self.mv, q, a, self.width(), box, label)
+            return mp.plan_view(self.mv, q, a, self.T_grip_cam, self.width(), box, label)
+
+        def first(alternatives):
+            errors = []
+            for a in alternatives:
+                try:
+                    return plan(a), errors
+                except PlanError as e:
+                    errors.append(str(e))
+            return None, errors
+
+        self.set_obstacles(self.scene, exclude=exclude)
+        steps, errors = first(alternatives)
+        if steps is None and self.obstacles:
+            self.log(f"  {errors[0] if len(errors) == 1 else 'no view reachable'}; looking without what was "
+                     f"seen before")
             self.set_obstacles(None)
-            steps = plan(q, box)
+            steps, errors = first(alternatives)
+        if steps is None:
+            if len(errors) == 1:
+                raise PlanError(errors[0])
+            raise PlanError(f"none of the {len(errors)} views is reachable: " + "; ".join(sorted(set(errors))[:3]))
         self._run(steps)
         return self.capture()
 
-    def survey(self, exclude=(), held=None, target=None):
-        """Look from the observation configuration (exercise/state_estimation.py;
-        and, when `target` is not recognised well enough from there, also
-        from the recognition views); returns the scene (perception.scene.Scene)
+    def survey(self, view, scene=None, held=None, exclude=()):
+        """Look from `view` and recognise what the camera sees there (SAM 3
+        and the depth: perception/scene.py with the exercise's
+        state_estimation.py); returns the scene (perception.scene.Scene)
         with .depth (depth_world.DepthWorld) and .obstacles (the unrecognised
-        things in it) set."""
-        frames, weights = [], []
+        things in it) set.
 
-        def take(views):
-            for v in views:
-                self.phase(f"observing: {v.get('name', 'view')} view")
-                label = f"look ({v.get('name', 'view')})"
-                frames.append(self.look_from(v["joints"], held, label, exclude) if "joints" in v
-                              else self.look(view_from_config(v), held, label, exclude))
-                weights.append(float(v.get("weight", 1.0)))
-            self.phase("recognising the items (SAM 3)")
-            return self.perception.observe(frames, weights, exclude=exclude)
+        view     the arm's six joints (the exercise's plan_observation moves
+                 there), a camera pose (4x4, the colour optical frame in the
+                 world: plan_view), or a list of them: the first reachable
+        scene    a scene to add this view to (it is updated and returned), or
+                 None for a new one
+        held     the held item (Held), kept clear of on the way
+        exclude  items not to look for (the held one)
 
+        Raises PlanError when no view is reachable, ActionError when the
+        scene has no basket."""
+        alternatives = self._views(view)
         t0 = time.time()
-        scene = take(self.survey_views)
-        extra = self.cfg.get("recognition_views", [])
-        if target is not None and extra:
-            d = scene.detections.get(target)
-            if d is None or d.score < float(self.cfg.get("recognition_min_score", 0.5)):
-                self.log(f"  {target} {'not recognised' if d is None else f'recognised with score {d.score:.2f}'}"
-                         f" from above; looking from the side too")
-                t0 = time.time()
-                scene = take(extra)
+        k = len(scene.frames) if scene is not None else 0
+        self.phase(f"observing: view {k + 1}")
+        frame = self._move_to_view(alternatives, held, exclude, f"look (view {k + 1})")
+        self.log(f"  view {k + 1}: {describe_view(frame, self.table_z)}")
+        self.phase("recognising the items (SAM 3)")
+        scene = self.perception.add_view(scene, frame, exclude=exclude, log=self.log)
         if scene.basket_xy is None:
             raise ActionError("the basket is not in view")
         self.phase("mapping what the camera saw")
-        self.map_depth(scene, frames, held)
+        self.map_depth(scene, scene.frames, held)
         found = sorted(scene.detections)
         self.log(f"  found {len(found)} items in {time.time() - t0:.1f} s: {', '.join(found)}"
                  + (f"; not found: {', '.join(scene.missing([i for i in self.items if i not in exclude]))}"
@@ -358,62 +363,29 @@ class ActionExecutive:
             self.log(f"    {'unseen space' if o.unseen else 'unknown obstacle'} at ({c[0]:.3f}, {c[1]:.3f}), "
                      f"{np.ptp(o.polygon[:, 0]) * 100:.0f} x {np.ptp(o.polygon[:, 1]) * 100:.0f} cm, "
                      f"{o.z_top * 100:.0f} cm high, on the {o.support}")
-        # Every view, annotated (a put then also shows its plan).
-        views = self.survey_views + extra
-        for k, f in enumerate(frames):
-            self.publish_detections(f, scene, f"{views[k].get('name', 'survey')} view: SAM 3 + depth")
+        # The new view, annotated (a put then also shows its plan).
+        self.publish_detections(frame, scene, f"view {k + 1}: SAM 3 + depth")
         self.save_scene(scene, "survey")
         self.scene = scene
         return scene
 
-    def close_look(self, scene, item, held=None):
-        """Look at `item` from closer and update the estimates of the items
-        seen there (when they agree with the survey within 5 cm). Returns
-        the frame, or None without a closer look."""
-        cl = self.cfg.get("close_look", {})
-        if not cl.get("enabled", False):
-            return None
-        p = scene.detections[item].estimate.placement
-        frame = self.look_down_at(p.x, p.y, cl["height"], held)
-        if frame is None:
-            self.log(f"  no close look at {item} possible; using the survey")
-            return None
-        self.phase(f"recognising {item} from closer")
-        sub = self.perception.observe([frame], [float(cl.get("weight", 1.2))], basket_xy=scene.basket_xy)
-        for it, d in sub.detections.items():
-            old = scene.detections.get(it)
-            if old is None:
-                continue
-            a, b = old.estimate.placement, d.estimate.placement
-            if math.hypot(a.x - b.x, a.y - b.y) < 0.05:
-                if it == item:
-                    self.log(f"  {item}: closer look moved it by {1000 * math.hypot(a.x - b.x, a.y - b.y):.0f} mm")
-                scene.detections[it] = d
-        self.map_depth(scene, scene.depth_frames + [frame], held)
-        self.publish_detections(frame, scene, "closer look: SAM 3 + depth")
-        return frame
-
-    def look_down_at(self, x, y, height, held=None):
-        """A frame looking straight down at (x, y) from `height` above the
-        table, or None when no such view is reachable."""
-        # The camera is beside the gripper: turning the view about the
-        # vertical moves the gripper around the item. Try first the turns that
-        # put the gripper farthest from the robot's base axis: near the base
-        # the arm folds over its own shoulder, low over the table.
-        ups = [(math.cos(a), math.sin(a), 0.0) for a in np.arange(8) * math.pi / 4]
-        T_cam_grip = inv_tf(self.T_grip_cam)
-
-        def grip_r(up):
-            T = down_view(x, y, height, up) @ T_cam_grip
-            return -math.hypot(T[0, 3], T[1, 3])
-
-        ups.sort(key=grip_r)
-        for up in ups:
-            try:
-                return self.look(down_view(x, y, height, up), held, "look closer")
-            except PlanError:
-                continue
-        return None
+    @staticmethod
+    def _views(view):
+        """The views a survey may look from, as arrays: (6,) joints or (4, 4) camera poses."""
+        try:
+            a = np.asarray(view, float)
+        except (TypeError, ValueError):
+            a = None
+        if a is not None and a.shape in ((6,), (4, 4)):
+            return [a]
+        try:
+            alternatives = [np.asarray(v, float) for v in view]
+        except (TypeError, ValueError):
+            alternatives = []
+        if not alternatives or any(v.shape not in ((6,), (4, 4)) for v in alternatives):
+            raise ActionError(f"a view is the arm's six joints or a 4x4 camera pose, or a list of them; "
+                              f"not {view!r}")
+        return alternatives
 
     def grasp_mask(self, frame, scene, item):
         """The pixels of `item` in `frame` for proposing a grasp: its SAM 3
@@ -502,11 +474,14 @@ class ActionExecutive:
             both = vis if depth_vis is None or depth_vis.shape != vis.shape else np.hstack([vis, depth_vis])
             cv2.imwrite(os.path.join(self.run_dir, f"{time.strftime('%H%M%S')}_{name}.jpg"), both)
 
-    def best_frame(self, scene):
-        """The scene's frame of the highest-weight view (the top view)."""
-        views = self.survey_views + self.cfg.get("recognition_views", [])
-        k = int(np.argmax([float(v.get("weight", 1.0)) for v in views[:len(scene.frames)]]))
-        return scene.frames[k]
+    def best_frame(self, scene, item=None):
+        """The scene's best frame for geometry (looking straight down, the
+        nearest; perception.scene.view_rank), or the one `item`'s estimate
+        comes from."""
+        if item is not None:
+            d = scene.detections[item]
+            return d.geometry_frame if d.geometry_frame is not None else d.frame
+        return min(scene.frames, key=lambda f: view_rank(f, self.table_z))
 
     def save_scene(self, scene, title):
         """The perceived placements as YAML in run_dir (for debugging)."""

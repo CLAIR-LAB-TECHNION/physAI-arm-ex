@@ -5,11 +5,19 @@ prompts). A name may match several objects and one object several names, so
 each candidate mask is turned into 3D points, its placement is estimated
 with the item's model (estimate.py) and scored by SAM's confidence times the
 geometric plausibility; then masks are assigned to items greedily, best
-first, one mask per item and one item per mask. Several frames are merged by
-keeping, per item, its best-scoring estimate.
+first, one mask per item and one item per mask.
+
+A scene grows one frame at a time (add_view). Which item is where comes from
+any frame: per item its best-scoring detection (the exercise's fuse_views).
+How it rests comes from the best frame for geometry that sees all of it:
+looking straight down before looking at an angle, nearer before farther
+(view_rank). A frame that sees an item cut off by the image's edge says
+nothing about it, and one that finds an item more than SAME_PLACE from where
+the scene has it is taken to have mistaken something else for it.
 """
 
-from dataclasses import dataclass, field
+import math
+from dataclasses import dataclass, field, replace
 
 import cv2
 import numpy as np
@@ -34,6 +42,7 @@ class Detection:
     mask: np.ndarray
     view: int = 0
     frame: object = None    # the rgbd.Frame it was found in
+    geometry_frame: object = None   # the frame its estimate comes from, when not `frame`
 
 
 @dataclass
@@ -41,6 +50,7 @@ class Scene:
     detections: dict = field(default_factory=dict)    # item -> Detection
     basket_xy: np.ndarray = None
     frames: list = field(default_factory=list)
+    per_view: list = field(default_factory=list)      # per frame: {item: Detection} kept from it
 
     def world(self, exclude=()):
         """{item: Placement} of the detected items, for the planner."""
@@ -165,35 +175,68 @@ class ScenePerception:
 
     # ---- several frames -------------------------------------------------------------
 
-    def observe(self, frames, weights=None, items=None, basket_xy=None, exclude=()):
-        """Scene from several frames: per item the detection with the highest
-        score x weight of its frame."""
-        weights = list(weights or [1.0] * len(frames))
-        scene = Scene(frames=list(frames))
-        best_basket = None
-        per_view = []
-        for k, f in enumerate(frames):
-            dets, bxy = self.detect(f, items, basket_xy, view=k, exclude=exclude)
-            if bxy is not None and (best_basket is None or weights[k] > best_basket[0]):
-                best_basket = (weights[k], np.asarray(bxy, float))
-            per_view.append(dets)
-        scene.basket_xy = np.asarray(basket_xy, float) if basket_xy is not None else (
-            best_basket[1] if best_basket else None)
-        # Best detection per item; two items cannot stand in one place (the exercise's fuse_views).
-        scene.detections = se.fuse_views(per_view, weights)
-        # Items recognised only in a lower-weight (oblique) view: take their
-        # geometry from the best view's depth, around where they were found.
-        k_best = int(np.argmax(weights))
-        best = frames[k_best]
-        for item, d in list(scene.detections.items()):
-            if weights[d.view] >= weights[k_best]:
-                continue
-            others = [o.mask for o in scene.detections.values() if o.frame is best]
-            est = self.refit(item, d.estimate, best, others, scene.basket_xy)
-            if est is not None:
-                est.notes.append(f"geometry from view {k_best + 1}")
-                d.estimate = est
+    def observe(self, frames, exclude=()):
+        """Scene from several frames, added one after the other (add_view)."""
+        scene = None
+        for f in frames:
+            scene = self.add_view(scene, f, exclude=exclude)
         return scene
+
+    def add_view(self, scene, frame, exclude=(), log=None):
+        """Add `frame` to `scene` (a new Scene when None) and return it: the
+        items found in it join the scene's detections (fuse_views), and every
+        item's estimate comes from the best frame for its geometry. `log`
+        (f(text)) hears about the detections left out."""
+        scene = scene if scene is not None else Scene()
+        k = len(scene.frames)
+        dets, bxy = self.detect(frame, basket_xy=scene.basket_xy, view=k, exclude=exclude)
+        if scene.basket_xy is None and bxy is not None:
+            scene.basket_xy = np.asarray(bxy, float)
+        kept = {}
+        for item, d in dets.items():
+            p = d.estimate.placement
+            old = scene.detections.get(item)
+            if not whole_in_view(frame, self.items[item], p):
+                why = "only partly in view"
+            elif old is not None and math.hypot(old.estimate.placement.x - p.x,
+                                                old.estimate.placement.y - p.y) > SAME_PLACE:
+                why = (f"found {100 * math.hypot(old.estimate.placement.x - p.x, old.estimate.placement.y - p.y):.0f}"
+                       f" cm from where it was seen before")
+            else:
+                kept[item] = d
+                continue
+            if log is not None:
+                log(f"  view {k + 1}: {item} (score {d.score:.2f}) {why}: left out")
+        scene.frames.append(frame)
+        scene.per_view.append(kept)
+        # Which item is where: every frame counts the same (the exercise's fuse_views).
+        scene.detections = se.fuse_views(scene.per_view, [1.0] * len(scene.frames))
+        self._geometry(scene)
+        return scene
+
+    def _geometry(self, scene):
+        """Every detection's estimate from the best-ranked frame (view_rank)
+        that sees all of the item: its detection there, else its depth there
+        around where the item is (refit); when that fails, the next best."""
+        order = sorted(range(len(scene.frames)), key=lambda k: view_rank(scene.frames[k], self.table_z))
+        for item, d in list(scene.detections.items()):
+            model = self.items[item]
+            for k in order:
+                f = scene.frames[k]
+                if f is d.frame:
+                    break
+                if not whole_in_view(f, model, d.estimate.placement):
+                    continue
+                there = scene.per_view[k].get(item)
+                if there is not None:
+                    scene.detections[item] = replace(there, score=max(there.score, d.score))
+                    break
+                others = [o.mask for o in scene.per_view[k].values()]
+                est = self.refit(item, d.estimate, f, others, scene.basket_xy)
+                if est is not None:
+                    est.notes.append(f"geometry from view {k + 1}")
+                    scene.detections[item] = replace(d, estimate=est, geometry_frame=f)
+                    break
 
     def refit(self, item, est, frame, other_masks=(), basket_xy=None, max_shift=0.04):
         """Re-estimate `item` from the depth of `frame` around where `est`
@@ -220,6 +263,9 @@ class ScenePerception:
 
 
 AROUND_MARGIN = 0.025    # the points around an item reach this far beyond it [m]
+SAME_PLACE = 0.05        # an item found again farther than this from where it was is something else [m]
+TOP_DOWN_TILT = 10.0     # a view this close to straight down [deg] counts as looking straight down
+EDGE_PX = 3              # an item counts as in view when its model stays this far inside the image
 CONFIDENT_SCORE = 0.5    # SAM 3 masks this sure leave their points out of the other items' fits
 OTHERS_GROW_PX = 3       # other masks are grown by this many pixels before their points are left out
 
@@ -247,15 +293,24 @@ def _boxes_meet(a, b):
     return a[0] <= b[1] and b[0] <= a[1] and a[2] <= b[3] and b[2] <= a[3]
 
 
-def model_mask(frame, model, placement):
-    """The pixels of `frame` that the item's model, resting as `placement`,
-    covers (its collision shapes' silhouettes; what hides it is ignored)."""
-    import math
+def view_rank(frame, table_z):
+    """Sort key of a frame for geometry, best first: looking straight down
+    (within TOP_DOWN_TILT) before looking at an angle; straight down, the
+    nearer to the table the better; at an angle, the less tilted the better."""
+    T = frame.T_world_cam
+    tilt = math.degrees(math.acos(float(np.clip(-T[2, 2], -1.0, 1.0))))
+    if tilt <= TOP_DOWN_TILT:
+        return (0, float(T[2, 3] - table_z))
+    return (1, tilt)
+
+
+def _model_points(model, placement):
+    """World points outlining the item's collision shapes, resting as
+    `placement`: a list of (N, 3) arrays, one per shape."""
     from ..planning.placement import placement_pose
     from ..transforms import rpy_to_matrix
-    H, W = frame.depth.shape
-    mask = np.zeros((H, W), np.uint8)
     xyz, R = placement_pose(model, placement)
+    out = []
     for sh in model.shapes:
         if sh.kind == "box":
             g = np.array([[i, j, k] for i in (-1, 1) for j in (-1, 1) for k in (-1, 1)], float) / 2
@@ -265,7 +320,25 @@ def model_mask(frame, model, placement):
             a = np.linspace(0, 2 * math.pi, 32, endpoint=False)
             ring = np.c_[r * np.cos(a), r * np.sin(a)]
             local = np.vstack([np.c_[ring, np.full(len(a), z)] for z in (-h / 2, h / 2)])
-        P = (local @ rpy_to_matrix(*sh.rpy).T + np.array(sh.xyz)) @ R.T + xyz
+        out.append((local @ rpy_to_matrix(*sh.rpy).T + np.array(sh.xyz)) @ R.T + xyz)
+    return out
+
+
+def whole_in_view(frame, model, placement, margin=EDGE_PX):
+    """The item's model, resting as `placement`, lies inside `frame`'s image
+    (`margin` pixels from its edges) in front of the camera."""
+    H, W = frame.depth.shape
+    uv, d = frame.project(np.vstack(_model_points(model, placement)))
+    return bool(np.all(d > 0.01) and np.all((uv[:, 0] >= margin) & (uv[:, 0] < W - margin)
+                                            & (uv[:, 1] >= margin) & (uv[:, 1] < H - margin)))
+
+
+def model_mask(frame, model, placement):
+    """The pixels of `frame` that the item's model, resting as `placement`,
+    covers (its collision shapes' silhouettes; what hides it is ignored)."""
+    H, W = frame.depth.shape
+    mask = np.zeros((H, W), np.uint8)
+    for P in _model_points(model, placement):
         uv, d = frame.project(P)
         if np.all(d > 0.01):
             cv2.fillConvexPoly(mask, cv2.convexHull(uv.astype(np.int32)), 1)

@@ -27,7 +27,9 @@ import time
 
 import numpy as np
 
-from ..toolkit import ActionError, estimate_item, make_item, mask_overlap, measure_item, rg6, show_new_item
+from ..toolkit import (ActionError, PlanError, estimate_item, make_item, mask_overlap, measure_item, rg6,
+                       show_new_item)
+from . import state_estimation as se
 
 MIN_POINTS = 30          # depth points a mask needs to count as an item
 
@@ -39,7 +41,7 @@ def new_item(robot, name, prompt, shape=None):
     objects/measured.py spec."""
     if robot.holding():
         raise ActionError("the gripper is holding something: put it down first, then measure the new item")
-    scene = robot.survey()
+    scene = robot.survey(se.OBSERVATION_JOINTS)
     robot.phase(f"looking for {prompt!r} (SAM 3)")
     found = None
     for f in scene.frames:
@@ -53,8 +55,10 @@ def new_item(robot, name, prompt, shape=None):
     c = np.median(pts[:, :2], axis=0)
     robot.log(f"  {prompt!r} found with score {score:.2f} at ({c[0]:.3f}, {c[1]:.3f})")
     notes = []
-    cl = robot.cfg.get("close_look", {})
-    close = robot.look_down_at(c[0], c[1], cl.get("height", 0.5))
+    try:
+        close = robot.survey(se.close_views(c[0], c[1]), scene).frames[-1]
+    except PlanError:
+        close = None
     if close is not None:
         robot.phase(f"measuring {name} from closer")
         hit = _find_new(robot, close, prompt, {}, scene.basket_xy, near=c)

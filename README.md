@@ -99,7 +99,8 @@ linked, so editing them needs no new build).
 | | `solve` | the plan: UPF's `OneshotPlanner(name="fast-downward")` | |
 | | `expected_states`, `facts_of` | the state after each action (UPF's `SequentialSimulator`) | |
 | | `execute_plan` | the robot performs the actions one by one, stopping at the first failure | the goal console |
-| `state_estimation.py` | `OBSERVATION_JOINTS` | the [observation configuration](#the-observation-configuration): the arm's joints from which the wrist camera sees the whole workspace | every action (`robot.survey`) |
+| `state_estimation.py` | `OBSERVATION_JOINTS` | the [observation configuration](#the-observation-configuration): the arm's joints from which the wrist camera sees the whole workspace | every action (`robot.survey(OBSERVATION_JOINTS)`) |
+| | `SIDE_VIEW`, `close_views` | [other views](#more-views): a camera pose looking at the workspace from the front at an angle; camera poses straight down at a spot from 0.50 m | `(pick-up X)` |
 | | `pixels_to_world` | depth pixels to 3D points in the world frame (pinhole camera) | every look |
 | | `estimate_placement` | an item's 3D points, and those around it, to where and how it rests (support, resting pose, x, y, yaw) | every look |
 | | `height_map`, `pose_cost`, `fit_pose` | its model seen from above (`toolkit.model_height_map`) matched to the heights of the points: the same for every kind of item | |
@@ -111,12 +112,12 @@ linked, so editing them needs no new build).
 | | `camera_to_gripper`, `held_box` | frames: the gripper pose for a camera pose; the held item's box in the gripper's frame | |
 | | `joint_line`, `straight_path`, `plan_path` | the straight line in joint space when nothing is in its way; else straight up first, then the line; else MoveIt's planner | every motion |
 | | `move_to_pose`, `plan_view`, `plan_home` | collision-free motions to a gripper pose, a camera view, home | every look, the way home |
-| | `plan_observation` | the collision-free motion to the observation configuration | every action (`robot.survey`) |
+| | `plan_observation` | the collision-free motion to a configuration to look from (the observation configuration, ...) | every survey from joints (`robot.survey`) |
 | | `plan_pick` | above the grasp, open, straight down, close, straight up | `(pick-up X)` |
 | | `plan_place` | carry, straight down, open, straight up | `(put-on-table X)`, `(put-in-basket X)` |
 | | `sample_spots`, `is_free`, `find_table_spot` | where on the table an item can be put | `(put-on-table X)` |
 | | `scene_obstacles` | what MoveIt keeps clear of besides the table and the wall | every motion |
-| `skills.py` | `pick_up` | `(pick-up X)`: check the gripper is empty, look, find X, propose grasps in the image, plan the grasp, grasp, check the grip | every action |
+| `skills.py` | `pick_up` | `(pick-up X)`: check the gripper is empty, look (also from the side when X is not recognised from above, then from closer), find X, propose grasps in the image, plan the grasp, grasp, check the grip | every action |
 | | `put_on_table` | `(put-on-table X)`: check the gripper holds X, look, find a free table spot, put X there, check it let go | every action |
 | | `put_in_basket` | `(put-in-basket X)`: check the gripper holds X, look, find the basket's emptiest spot, drop X there, check it let go | every action |
 | `misc.py` (bonus) | `new_item` | `new-item: NAME`: find an unknown item by its text prompt (SAM 3), measure it, add it | `new-item:` in a console |
@@ -149,7 +150,8 @@ What these files may use from the rest of the code is in two files:
   of the six joint angles.
 
 The skills also get the robot itself (`autonomy/executive.py`): looking
-(`robot.survey`, `robot.close_look`), the gripper (`robot.holding`,
+(`robot.survey`, from the arm's joints or a camera pose, adding to the
+scene of earlier views), the gripper (`robot.holding`,
 `robot.width`), MoveIt's planning scene (`robot.set_obstacles`), running a
 plan's steps (`robot.run`) and what the gripper holds; the top of
 `skills.py` (and of `misc.py`) lists everything.
@@ -211,6 +213,29 @@ server) when none is running, with the robot model of
 `~/.ros/lab_move_group.log`. It only plans: the console executes the
 trajectories, timed by `toolkit.trajectory`. To start it by hand (e.g. with
 RViz): `ros2 launch lab_replica moveit.launch.py rviz:=true`.
+
+### More views
+
+`robot.survey(view, scene=None, held=None, exclude=())` is the robot's only
+way of looking. `view` is the arm's six joints, a camera pose (a 4x4 matrix:
+the camera's optical frame in the world; `toolkit.look_at` and
+`toolkit.down_view` make one), or a list of them, of which the first
+reachable is used. Given the `scene` of earlier views, it adds what the new
+view sees: an item is recognised from any view (each frame's detections are
+merged by `fuse_views`), and its pose comes from the best view that sees all
+of it: looking straight down before looking at an angle, and nearer before
+farther. An item a view finds more than 5 cm from where the scene has it is
+taken to be something else there.
+
+The observation configuration may not be enough: from straight above some
+items are hard for SAM 3 to name, and from 0.8 m the depth is only so
+accurate. Other views can be found by hand like the observation
+configuration (more joints), or computed (camera poses); the skills decide
+when to use them. The solution's `pick_up` looks from the front
+(`SIDE_VIEW`, a camera pose) when the top view did not recognise the item
+with a score of at least 0.5, and then straight down at it from 0.50 m
+(`close_views(x, y)`: eight turns of the camera about the vertical, since
+not every one is reachable).
 
 ## Build (once)
 
@@ -1083,8 +1108,9 @@ frames).
   did not recognise (score below 0.5) the camera also looks at the same
   region at an angle from the front, where SAM 3 recognises them; the
   geometry still comes from the top view. Before a pick the camera also looks
-  straight down at the target from 0.50 m. Views are in
-  config/perception.yaml.
+  straight down at the target from 0.50 m. Every look is `robot.survey`
+  from a view of `exercise/state_estimation.py`, added to the scene of the
+  earlier ones (see [More views](#more-views)); the skills decide which.
 * **Recognition.** SAM 3 is asked for every item by name (one image encoding,
   13 prompts, about 0.7 s on the RTX 3070 Ti). A name can match several objects
   and an object several names (from some angles the spray bottle's body is "a
@@ -1116,8 +1142,8 @@ frames).
   blocked, the next best spots are tried. A drop can tip or bounce items,
   which is intended: the state after a put-in-basket is for perception to
   find out.
-* **Grasp.** Proposed in a top-down image, the close look (else the top
-  view): the item's pixels are its SAM 3 mask joined with the silhouette of
+* **Grasp.** Proposed in the top-down image the item's pose comes from (the
+  close look, else the top view): the item's pixels are its SAM 3 mask joined with the silhouette of
   its estimated model (SAM 3 may miss a part, e.g. the spray bottle's head).
   The fingers close on the top of the item (the pixels nearest to the
   camera): across the narrow side of an elongated top, across either pair of
@@ -1454,7 +1480,7 @@ physAI-arm-ex/
     config/
       cell.yaml            MEASUREMENTS of the cell: table, robot mount, gripper, wrist camera, basket, camera, wall
       items.yaml           MEASUREMENTS of the twelve items
-      perception.yaml      wrist camera topics, recognition views, SAM 3 prompts and thresholds
+      perception.yaml      wrist camera topics, SAM 3 prompts and thresholds
       real_robot.yaml      robot IP and driver settings
       controllers.yaml     ros2_control controllers of the simulation
       domain.pddl          the lab's PDDL domain (the planner uses exercise/task_planning/domain.pddl)

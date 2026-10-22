@@ -30,15 +30,16 @@ The robot (autonomy/executive.py):
     robot.width()                   the gripper's opening now [m]
     robot.current()                 the arm's joints now
     robot.wait(seconds)             let the robot's state come in for a while
-    robot.survey(exclude=(), held=None, target=None)
-                                    look from the observation configuration (state_estimation.py;
-                                    and from the side when `target` is not recognised from above): a Scene with .detections {item:
-                                    Detection}, .basket_xy, .frames, .depth, .obstacles
-    robot.close_look(scene, item, held=None)
-                                    look at `item` from closer and update `scene`: the frame, or None
-    robot.look_down_at(x, y, height, held=None)
-                                    a frame looking straight down at (x, y), or None
-    robot.best_frame(scene)         the scene's top view
+    robot.survey(view, scene=None, held=None, exclude=())
+                                    look from `view` (the arm's joints, a 4x4 camera pose, or a list
+                                    of them: the first reachable; state_estimation.py) and recognise
+                                    what is seen, added to `scene` when given: a Scene with
+                                    .detections {item: Detection}, .basket_xy, .frames (the last is
+                                    this view's), .depth, .obstacles. Raises PlanError when no view
+                                    is reachable
+    robot.best_frame(scene, item=None)
+                                    the scene's frame looking straight down from nearest, or the one
+                                    `item`'s estimate comes from
     robot.grasp_mask(frame, scene, item)
                                     the pixels of `item` in `frame` to propose a grasp on
     robot.set_obstacles(scene, exclude=())
@@ -66,6 +67,7 @@ from . import motion_planning as mp
 from . import state_estimation as se
 
 DROP_CLEARANCE = 0.02    # dropping into the basket: the item's bottom this far above the rim or the pile
+RECOGNISED = 0.5         # an item found with a lower score (SAM 3 x plausibility) is looked at again
 
 
 # ---- the skills ------------------------------------------------------------------------------
@@ -81,16 +83,26 @@ def pick_up(robot, item):
         raise ActionError(f"not applicable: the gripper is holding "
                           f"{robot.held.item if robot.held else 'something'}")
     robot.now_empty()
-    scene = robot.survey(target=item)
+    scene = robot.survey(se.OBSERVATION_JOINTS)
+    d = scene.detections.get(item)
+    if d is None or d.score < RECOGNISED:
+        robot.log(f"  {item} {'not recognised' if d is None else f'recognised with score {d.score:.2f}'}"
+                  f" from above; looking from the side too")
+        scene = robot.survey(se.SIDE_VIEW, scene)
     if item not in scene.detections:
         raise ActionError(f"{item} not found")
-    close = robot.close_look(scene, item)
+    # From closer, straight down: the item's pose is more accurate there.
+    a = scene.detections[item].estimate.placement
+    try:
+        scene = robot.survey(se.close_views(a.x, a.y), scene)
+    except PlanError as e:
+        robot.log(f"  no closer look at {item} ({e}); using the survey")
     p = scene.detections[item].estimate.placement
     robot.log(f"  {item}: {p.rest} on the {p.support} at ({p.x:.3f}, {p.y:.3f}), yaw "
-              f"{math.degrees(p.yaw):.0f} deg")
-    # The grasps, proposed in a top-down view: the closer look, else the top view.
+              f"{math.degrees(p.yaw):.0f} deg ({1000 * math.hypot(p.x - a.x, p.y - a.y):.0f} mm from the survey's)")
+    # The grasps, proposed in the top-down view the item's pose comes from.
     robot.phase(f"finding a grasp of {item}")
-    frame = close if close is not None else robot.best_frame(scene)
+    frame = robot.best_frame(scene, item)
     mask = robot.grasp_mask(frame, scene, item)
     image_grasps = se.grasp_in_image(frame, mask)
     if not image_grasps:
@@ -131,7 +143,7 @@ def put_on_table(robot, item, target_xy=None):
     spot nearest to where it was picked up (or to target_xy). Applicable
     when the gripper holds something."""
     held = _held(robot, item)
-    scene = robot.survey(exclude=(item,), held=held)
+    scene = robot.survey(se.OBSERVATION_JOINTS, held=held, exclude=(item,))
     robot.phase(f"planning where to put {item}")
     robot.set_obstacles(scene, exclude=(item,))
     target, steps = _plan_table_spot(robot, robot.current(), held, scene, target_xy)
@@ -144,7 +156,7 @@ def put_in_basket(robot, item):
     there (it may land on other items). Applicable when the gripper holds
     something."""
     held = _held(robot, item)
-    scene = robot.survey(exclude=(item,), held=held)
+    scene = robot.survey(se.OBSERVATION_JOINTS, held=held, exclude=(item,))
     robot.phase(f"planning where to put {item}")
     robot.set_obstacles(scene, exclude=(item,))
     target, steps = _plan_drop(robot, robot.current(), held, scene)

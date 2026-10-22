@@ -38,7 +38,7 @@ def load_frame(path):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("frames", nargs="+", help="frame_*.npz files (the first is the main view)")
+    ap.add_argument("frames", nargs="+", help="frame_*.npz files, in the order they were taken")
     ap.add_argument("--out", default="depth_map.png", help="top view of the map (PNG)")
     ap.add_argument("--pick", help="plan the grasp of this item from the last frame's joints")
     args = ap.parse_args()
@@ -48,7 +48,7 @@ def main():
     cfg = load_perception_config()
     frames = [load_frame(p) for p in args.frames]
     perception = ScenePerception(cell, items, basket, cfg=cfg)
-    scene = perception.observe(frames, [1.0] + [0.9] * (len(frames) - 1))
+    scene = perception.observe(frames)
     print(f"found {len(scene.detections)} items: {', '.join(sorted(scene.detections))}")
     for it, d in sorted(scene.detections.items()):
         p = d.estimate.placement
