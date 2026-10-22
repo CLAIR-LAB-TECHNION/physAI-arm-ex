@@ -1,0 +1,17 @@
+newmtl red_can_silver
+Ka 0.7200 0.7300 0.7500
+Kd 0.7200 0.7300 0.7500
+Ks 0.600 0.600 0.600
+Ns 60.0
+d 1.0
+illum 2
+
+newmtl red_can_label
+Ka 1.0000 1.0000 1.0000
+Kd 1.0000 1.0000 1.0000
+Ks 0.500 0.500 0.500
+Ns 50.0
+d 1.0
+illum 2
+map_Kd red_can_label.png
+

@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<sdf version="1.8">
+  <model name="roll_of_green_tape">
+    <link name="link">
+      <inertial><pose>0 0 6.4526e-05 0 0 0</pose><mass>0.07</mass><inertia><ixx>2.33201e-05</ixx><ixy>0</ixy><ixz>0</ixz><iyy>2.33201e-05</iyy><iyz>0</iyz><izz>4.21136e-05</izz></inertia></inertial>
+      <collision name="c0"><pose>0 0 0.00075 0 -0 0</pose><geometry><box><size>0.082 0.0163108 0.0185</size></box></geometry><surface><friction><ode><mu>0.9</mu><mu2>0.9</mu2></ode></friction><contact><ode><min_depth>0.0005</min_depth><max_vel>0.1</max_vel></ode></contact></surface></collision>
+      <collision name="c1"><pose>0 0 0.00075 0 -0 0.392699</pose><geometry><box><size>0.082 0.0163108 0.0185</size></box></geometry><surface><friction><ode><mu>0.9</mu><mu2>0.9</mu2></ode></friction><contact><ode><min_depth>0.0005</min_depth><max_vel>0.1</max_vel></ode></contact></surface></collision>
+      <collision name="c2"><pose>0 0 0.00075 0 -0 0.785398</pose><geometry><box><size>0.082 0.0163108 0.0185</size></box></geometry><surface><friction><ode><mu>0.9</mu><mu2>0.9</mu2></ode></friction><contact><ode><min_depth>0.0005</min_depth><max_vel>0.1</max_vel></ode></contact></surface></collision>
+      <collision name="c3"><pose>0 0 0.00075 0 -0 1.1781</pose><geometry><box><size>0.082 0.0163108 0.0185</size></box></geometry><surface><friction><ode><mu>0.9</mu><mu2>0.9</mu2></ode></friction><contact><ode><min_depth>0.0005</min_depth><max_vel>0.1</max_vel></ode></contact></surface></collision>
+      <collision name="c4"><pose>0 0 0.00075 0 -0 1.5708</pose><geometry><box><size>0.082 0.0163108 0.0185</size></box></geometry><surface><friction><ode><mu>0.9</mu><mu2>0.9</mu2></ode></friction><contact><ode><min_depth>0.0005</min_depth><max_vel>0.1</max_vel></ode></contact></surface></collision>
+      <collision name="c5"><pose>0 0 0.00075 0 -0 1.9635</pose><geometry><box><size>0.082 0.0163108 0.0185</size></box></geometry><surface><friction><ode><mu>0.9</mu><mu2>0.9</mu2></ode></friction><contact><ode><min_depth>0.0005</min_depth><max_vel>0.1</max_vel></ode></contact></surface></collision>
+      <collision name="c6"><pose>0 0 0.00075 0 -0 2.35619</pose><geometry><box><size>0.082 0.0163108 0.0185</size></box></geometry><surface><friction><ode><mu>0.9</mu><mu2>0.9</mu2></ode></friction><contact><ode><min_depth>0.0005</min_depth><max_vel>0.1</max_vel></ode></contact></surface></collision>
+      <collision name="c7"><pose>0 0 0.00075 0 -0 2.74889</pose><geometry><box><size>0.082 0.0163108 0.0185</size></box></geometry><surface><friction><ode><mu>0.9</mu><mu2>0.9</mu2></ode></friction><contact><ode><min_depth>0.0005</min_depth><max_vel>0.1</max_vel></ode></contact></surface></collision>
+      <collision name="c8"><pose>0 0 -0.0085 0 0 0</pose><geometry><cylinder><radius>0.041</radius><length>0.003</length></cylinder></geometry><surface><friction><ode><mu>0.9</mu><mu2>0.9</mu2></ode></friction><contact><ode><min_depth>0.0005</min_depth><max_vel>0.1</max_vel></ode></contact></surface></collision>
+      <visual name="visual">
+        <geometry><mesh><uri>model://roll_of_green_tape/meshes/roll_of_green_tape.obj</uri></mesh></geometry>
+      </visual>
+    </link>
+  </model>
+</sdf>

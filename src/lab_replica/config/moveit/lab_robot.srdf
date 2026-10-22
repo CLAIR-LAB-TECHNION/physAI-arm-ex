@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- MoveIt's view of description/urdf/lab_robot.urdf.xacro: the UR5e, the
+     Quick Changer, the RG6 and the wrist RealSense.
+
+     The planning group `arm` is the chain from base_link to rg6_base_link
+     (the RG6's mounting face, the frame the skills plan for). The fingers
+     are not planned: their joints are set from the gripper's opening in
+     every request (moveit_client.py).
+
+     disable_collisions: pairs of links that touch by construction
+     (Adjacent) or can never touch (Never), from the UR's own SRDF
+     (ur_moveit_config) plus the gripper, the changer and the camera;
+     checked by sampling random configurations for contacts. -->
+<robot name="ur">
+  <group name="arm">
+    <chain base_link="base_link" tip_link="rg6_base_link"/>
+  </group>
+
+  <!-- the arm, from ur_moveit_config/srdf/ur_macro.srdf.xacro -->
+  <disable_collisions link1="base_link" link2="base_link_inertia" reason="Adjacent"/>
+  <disable_collisions link1="base_link_inertia" link2="shoulder_link" reason="Adjacent"/>
+  <disable_collisions link1="tool0" link2="wrist_1_link" reason="Never"/>
+  <disable_collisions link1="tool0" link2="wrist_2_link" reason="Never"/>
+  <disable_collisions link1="tool0" link2="wrist_3_link" reason="Adjacent"/>
+  <disable_collisions link1="forearm_link" link2="upper_arm_link" reason="Adjacent"/>
+  <disable_collisions link1="forearm_link" link2="wrist_1_link" reason="Adjacent"/>
+  <disable_collisions link1="shoulder_link" link2="upper_arm_link" reason="Adjacent"/>
+  <disable_collisions link1="wrist_1_link" link2="wrist_2_link" reason="Adjacent"/>
+  <disable_collisions link1="wrist_1_link" link2="wrist_3_link" reason="Never"/>
+  <disable_collisions link1="wrist_2_link" link2="wrist_3_link" reason="Adjacent"/>
+
+  <!-- tool side: the changer on the flange, the RG6 on the changer, the camera on the RG6 -->
+  <disable_collisions link1="wrist_3_link" link2="quick_changer" reason="Adjacent"/>
+  <disable_collisions link1="wrist_2_link" link2="quick_changer" reason="Never"/>
+  <disable_collisions link1="wrist_1_link" link2="quick_changer" reason="Never"/>
+  <disable_collisions link1="quick_changer" link2="rg6_base_link" reason="Adjacent"/>
+  <disable_collisions link1="wrist_3_link" link2="rg6_base_link" reason="Never"/>
+  <disable_collisions link1="wrist_2_link" link2="rg6_base_link" reason="Never"/>
+  <disable_collisions link1="wrist_camera_link" link2="rg6_base_link" reason="Adjacent"/>
+  <disable_collisions link1="wrist_camera_link" link2="quick_changer" reason="Never"/>
+  <disable_collisions link1="wrist_camera_link" link2="wrist_3_link" reason="Never"/>
+  <disable_collisions link1="wrist_camera_link" link2="wrist_2_link" reason="Never"/>
+
+  <!-- the RG6's own links: they move together on the parallelogram -->
+  <disable_collisions link1="rg6_base_link" link2="left_inner_finger" reason="Adjacent"/>
+  <disable_collisions link1="rg6_base_link" link2="right_inner_finger" reason="Adjacent"/>
+  <disable_collisions link1="rg6_base_link" link2="left_outer_knuckle" reason="Adjacent"/>
+  <disable_collisions link1="rg6_base_link" link2="right_outer_knuckle" reason="Adjacent"/>
+  <disable_collisions link1="rg6_base_link" link2="left_inner_knuckle" reason="Adjacent"/>
+  <disable_collisions link1="rg6_base_link" link2="right_inner_knuckle" reason="Adjacent"/>
+  <disable_collisions link1="left_inner_finger" link2="left_outer_knuckle" reason="Adjacent"/>
+  <disable_collisions link1="left_inner_finger" link2="left_inner_knuckle" reason="Adjacent"/>
+  <disable_collisions link1="left_outer_knuckle" link2="left_inner_knuckle" reason="Never"/>
+  <disable_collisions link1="right_inner_finger" link2="right_outer_knuckle" reason="Adjacent"/>
+  <disable_collisions link1="right_inner_finger" link2="right_inner_knuckle" reason="Adjacent"/>
+  <disable_collisions link1="right_outer_knuckle" link2="right_inner_knuckle" reason="Never"/>
+  <disable_collisions link1="left_inner_finger" link2="right_inner_finger" reason="Never"/>
+  <disable_collisions link1="left_outer_knuckle" link2="right_outer_knuckle" reason="Never"/>
+  <disable_collisions link1="left_inner_knuckle" link2="right_inner_knuckle" reason="Never"/>
+  <disable_collisions link1="left_outer_knuckle" link2="right_inner_knuckle" reason="Never"/>
+  <disable_collisions link1="left_inner_knuckle" link2="right_outer_knuckle" reason="Never"/>
+  <disable_collisions link1="left_inner_finger" link2="right_outer_knuckle" reason="Never"/>
+  <disable_collisions link1="left_inner_finger" link2="right_inner_knuckle" reason="Never"/>
+  <disable_collisions link1="right_inner_finger" link2="left_outer_knuckle" reason="Never"/>
+  <disable_collisions link1="right_inner_finger" link2="left_inner_knuckle" reason="Never"/>
+  <disable_collisions link1="wrist_camera_link" link2="left_outer_knuckle" reason="Never"/>
+  <disable_collisions link1="wrist_camera_link" link2="right_outer_knuckle" reason="Never"/>
+  <disable_collisions link1="wrist_camera_link" link2="left_inner_knuckle" reason="Never"/>
+  <disable_collisions link1="wrist_camera_link" link2="right_inner_knuckle" reason="Never"/>
+  <disable_collisions link1="quick_changer" link2="left_outer_knuckle" reason="Never"/>
+  <disable_collisions link1="quick_changer" link2="right_outer_knuckle" reason="Never"/>
+  <disable_collisions link1="quick_changer" link2="left_inner_knuckle" reason="Never"/>
+  <disable_collisions link1="quick_changer" link2="right_inner_knuckle" reason="Never"/>
+</robot>

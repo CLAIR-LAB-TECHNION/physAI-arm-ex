@@ -1,0 +1,51 @@
+# PERCEPTION AND AUTONOMOUS ACTIONS (lab_replica/perception, lab_replica/skills).
+# Units: metres, radians.
+
+# Topics of the wrist RealSense (realsense2_camera's names; the simulation
+# bridges its sensor to the same ones). The depth image must be aligned to
+# the colour image (driver option align_depth.enable:=true).
+topics:
+  color: /camera/camera/color/image_raw
+  depth: /camera/camera/aligned_depth_to_color/image_raw
+  info: /camera/camera/color/camera_info
+
+# Where the camera looks from is up to the skills (lab_replica/exercise/
+# skills.py): every action surveys from the arm's joints OBSERVATION_JOINTS in
+# lab_replica/exercise/state_estimation.py, from which the camera sees the
+# whole blue board (0.70 x 0.59 m) and a basket anywhere on it; a pick-up
+# also looks from the side (SIDE_VIEW) when the item is not recognised from
+# above, and from closer (close_views). Problem generation keeps items and
+# the basket inside the observation view (problems/generator.py SurveyViews).
+
+# Spots tried (each motion-planned) when putting an item down.
+put_max_tries: 80
+
+sam3:
+  model: facebook/sam3
+  threshold: 0.1          # SAM 3 detection score kept as a candidate
+  mask_erode_px: 3        # shrink masks before reading depth (edge pixels are unreliable)
+
+# A mask is assigned to an item when SAM 3's score times the geometric
+# plausibility (height and size match the item's model) reaches this.
+min_assignment_score: 0.1
+# Points nearer the robot base axis than this belong to the robot.
+robot_radius: 0.17
+# Points higher above the table than this are not items (gripper, arm).
+max_item_height: 0.30
+
+# Text prompts per item; the first one is the main name. The basket is
+# found with its own prompt.
+basket_prompt: woven basket
+prompts:
+  red-can: [red soda can]
+  red-spray-bottle: [red spray bottle]
+  roll-of-black-tape: [roll of black tape]
+  roll-of-green-tape: [roll of green tape]
+  roll-of-blue-tape: [roll of blue tape]
+  blue-cup-with-yellow-stripe: [blue cup with yellow stripe]
+  green-mug: [green mug]
+  yellow-block: [yellow block]
+  orange-block: [orange block]
+  blue-block: [blue block]
+  red-block: [red block]
+  green-block: [green block]

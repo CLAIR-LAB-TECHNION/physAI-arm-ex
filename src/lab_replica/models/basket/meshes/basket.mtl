@@ -1,0 +1,35 @@
+newmtl basket_weave
+Ka 1.0000 1.0000 1.0000
+Kd 1.0000 1.0000 1.0000
+Ks 0.050 0.050 0.050
+Ns 5.0
+d 1.0
+illum 2
+map_Kd weave.png
+
+newmtl basket_rim
+Ka 0.6600 0.5300 0.3800
+Kd 0.6600 0.5300 0.3800
+Ks 0.050 0.050 0.050
+Ns 20.0
+d 1.0
+illum 2
+
+newmtl basket_weave_in
+Ka 0.9200 0.9200 0.9200
+Kd 0.9200 0.9200 0.9200
+Ks 0.030 0.030 0.030
+Ns 5.0
+d 1.0
+illum 2
+map_Kd weave.png
+
+newmtl basket_coil
+Ka 1.0000 1.0000 1.0000
+Kd 1.0000 1.0000 1.0000
+Ks 0.030 0.030 0.030
+Ns 5.0
+d 1.0
+illum 2
+map_Kd coil.png
+

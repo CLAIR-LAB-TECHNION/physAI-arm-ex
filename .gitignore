@@ -1,0 +1,24 @@
+build/
+install/
+log/
+__pycache__/
+*.pyc
+.env
+.venv/
+runs/
+third_party/
+
+# Generated outputs: kept locally, not in the repo
+videos/
+*.mp4
+*.log
+logs/
+recordings/
+# Scenes and tasks of the old cell (before 2026-10-18)
+old_cell_*/
+# Editors and tools
+.vscode/
+.idea/
+.claude/
+# The lab's original photos (1.2 MB each), kept locally only
+reference/*_image.png

@@ -1,0 +1,30 @@
+# The Python packages of the .venv, on top of ROS 2 Humble and Ubuntu 22.04's
+# own Python packages, which the .venv also sees (--system-site-packages).
+# run/setup.sh installs them; by hand:
+#
+#   python3 -m venv --system-site-packages .venv
+#   .venv/bin/pip install -r requirements.txt
+#
+# The versions are the ones the lab PC runs.
+
+--extra-index-url https://download.pytorch.org/whl/cu128
+
+# ROS Humble's Python modules are built against numpy 1: never upgrade it.
+numpy<2
+
+# SAM 3 (perception/sam3.py); CUDA 12.8 builds (NVIDIA driver 570 or newer)
+torch==2.11.0+cu128
+torchvision==0.26.0+cu128
+transformers==5.19.0
+accelerate==1.15.0
+pillow==12.3.0
+huggingface-hub==1.33.0
+tokenizers==0.23.2
+safetensors==0.8.0
+
+# The task planner (tamp/planner.py): UPF and its Fast Downward engine (the
+# wheel brings Fast Downward with it). ConfigSpace, a UPF dependency, needs
+# a newer scipy than Ubuntu 22.04's from 1.0 on.
+unified-planning==1.3.0
+up-fast-downward==1.0.0
+configspace==0.7.1

@@ -1,0 +1,16 @@
+newmtl blue_cup_with_yellow_stripe_body
+Ka 0.0500 0.0800 0.2500
+Kd 0.0500 0.0800 0.2500
+Ks 0.300 0.300 0.300
+Ns 30.0
+d 1.0
+illum 2
+
+newmtl blue_cup_with_yellow_stripe_stripe
+Ka 0.9500 0.8000 0.1000
+Kd 0.9500 0.8000 0.1000
+Ks 0.200 0.200 0.200
+Ns 20.0
+d 1.0
+illum 2
+

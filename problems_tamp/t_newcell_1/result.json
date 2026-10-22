@@ -1,0 +1,75 @@
+{
+ "task": "t_newcell_1",
+ "goal": "(and (in-basket yellow-block) (in-basket red-can))",
+ "init": [
+  "(in-basket yellow-block)",
+  "(on-table blue-block)",
+  "(on-table blue-cup-with-yellow-stripe)",
+  "(on-table green-block)",
+  "(on-table green-mug)",
+  "(on-table orange-block)",
+  "(on-table red-block)",
+  "(on-table red-can)",
+  "(on-table red-spray-bottle)",
+  "(on-table roll-of-black-tape)",
+  "(on-table roll-of-blue-tape)",
+  "(on-table roll-of-green-tape)",
+  "(robot-gripper-empty)"
+ ],
+ "plan": [
+  "(pick-up red-can)",
+  "(put-in-basket red-can)"
+ ],
+ "started": "2026-10-18 16:39:54",
+ "attach": false,
+ "ok": true,
+ "actions": [
+  {
+   "action": "(pick-up red-can)",
+   "ok": true,
+   "message": "holding red-can (width 56 mm)",
+   "held": "red-can",
+   "seconds": 36.3
+  },
+  {
+   "action": "(put-in-basket red-can)",
+   "ok": true,
+   "message": "put red-can at (0.562, 0.071) on the basket",
+   "held": "",
+   "seconds": 24.1
+  }
+ ],
+ "failed_at": null,
+ "state": [
+  "(in-basket red-can)",
+  "(in-basket yellow-block)",
+  "(on-table blue-block)",
+  "(on-table blue-cup-with-yellow-stripe)",
+  "(on-table green-block)",
+  "(on-table green-mug)",
+  "(on-table orange-block)",
+  "(on-table red-block)",
+  "(on-table red-spray-bottle)",
+  "(on-table roll-of-black-tape)",
+  "(on-table roll-of-blue-tape)",
+  "(on-table roll-of-green-tape)",
+  "(robot-gripper-empty)"
+ ],
+ "seconds": 60.4,
+ "goal_holds": true,
+ "true_state": [
+  "(in-basket red-can)",
+  "(in-basket yellow-block)",
+  "(on-table blue-block)",
+  "(on-table blue-cup-with-yellow-stripe)",
+  "(on-table green-block)",
+  "(on-table green-mug)",
+  "(on-table orange-block)",
+  "(on-table red-block)",
+  "(on-table red-spray-bottle)",
+  "(on-table roll-of-black-tape)",
+  "(on-table roll-of-blue-tape)",
+  "(on-table roll-of-green-tape)",
+  "(robot-gripper-empty)"
+ ]
+}

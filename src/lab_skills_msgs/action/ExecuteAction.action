@@ -1,0 +1,14 @@
+# Execute one action of the order-assembly PDDL domain on the robot.
+#   "(pick-up green-mug)", "(put-in-basket red-block)", "(put-on-table roll-of-blue-tape)"
+string action
+# put-on-table only: where to put the item (world x, y in metres). Empty: the
+# free spot nearest to where the item was picked up.
+float64[] target_xy
+---
+bool success
+string message
+# The item in the gripper afterwards ("" when empty).
+string held
+---
+# What the robot is doing: observing, planning, executing a motion, ...
+string phase
