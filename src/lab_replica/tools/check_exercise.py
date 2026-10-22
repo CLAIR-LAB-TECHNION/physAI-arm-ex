@@ -256,7 +256,7 @@ def check_motion():
     print("motion planning (exercise/motion_planning.py; the motions need MoveIt: try them in simulation)")
     from lab_replica.autonomy.views import hand_eye
     from lab_replica.exercise import motion_planning as mp
-    from lab_replica.planning.skills import Held
+    from lab_replica.toolkit import Held
     from lab_replica.robot.collision import object_box
     from lab_replica.toolkit import box_in_world, fk, gripper_pose, ik_all
     cell = config.load_cell()

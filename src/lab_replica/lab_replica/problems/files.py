@@ -25,7 +25,7 @@ from ..gazebo.world import WORLD_NAME, problem_world
 from ..planning import pddl
 from ..planning.motion import Planner
 from ..planning.placement import pose_dict
-from ..planning.skills import compress_path
+from ..planning.pick_place import compress_path
 from ..robot.kinematics import robot_urdf
 from ..transforms import matrix_to_rpy, quat_to_matrix
 from .drawing import draw_layout

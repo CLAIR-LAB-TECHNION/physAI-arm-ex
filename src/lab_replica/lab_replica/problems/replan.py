@@ -32,7 +32,7 @@ def measured_placements(gen, layout, log=print):
         x, y = o["xyz"][:2]
         if o["support"] == "basket":
             x, y = x + shift[0], y + shift[1]
-            z_support = gen.skills.basket_floor()
+            z_support = gen.pick_place.basket_floor()
         else:
             z_support = gen.cell["table"]["surface_z"]
         out.append(Placement(item, o["resting_pose"], float(x), float(y), math.radians(o["yaw_deg"]),

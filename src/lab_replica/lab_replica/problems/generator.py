@@ -3,7 +3,7 @@
 A problem is a stable arrangement of the twelve items (some on the table,
 some in the basket, possibly one in the gripper) plus a PDDL goal whose
 optimal plan has between min_actions and max_actions actions. Every action of
-that plan is motion-planned with the collision-checked skills, so accepted
+that plan is motion-planned with the collision-checked pick and place (planning/pick_place.py), so accepted
 goals are physically reachable, not only reachable in PDDL.
 
 A problem is passed around as a dict:
@@ -12,7 +12,7 @@ A problem is passed around as a dict:
     basket_xy   [x, y]
     held        the item the robot holds in the initial state, or None
     init, goal  PDDL facts;  plan  the optimal PDDL plan
-    setup, actions  the motion plan (see skills.py for the step format)
+    setup, actions  the motion plan (see planning/pick_place.py for the step format)
 """
 
 import math
@@ -29,7 +29,7 @@ from ..planning import pddl
 from ..planning.geometry2d import polygon_inside_circle, polygon_inside_rect, polygons_intersect
 from ..planning.motion import PlanError
 from ..planning.placement import Placement, placement_at, placement_pose
-from ..planning.skills import Skills
+from ..planning.pick_place import PickPlace
 from ..transforms import inv_tf, quat_to_matrix
 
 # Settling check: an item that moves or tilts more than this is not stable
@@ -94,7 +94,7 @@ class Generator:
         self.basket = objects.load_basket(self.cell)
         self.cam = SurveyViews(self.cell)
         self.basket_xy = self.sample_basket_xy() if randomize_basket else np.array(self.cell["basket"]["center_xy"], float)
-        self.skills = Skills(self.cell, self.items, self.basket, basket_xy=self.basket_xy)
+        self.pick_place = PickPlace(self.cell, self.items, self.basket, basket_xy=self.basket_xy)
         self.log = log
         self.home = np.array(self.cell["robot"]["home_joints"], float)
 
@@ -178,7 +178,7 @@ class Generator:
             a = self.rng.uniform(-math.pi, math.pi)
             p = Placement(item, rest, float(bx + r * math.cos(a)), float(by + r * math.sin(a)),
                           float(self.rng.uniform(-math.pi, math.pi)), support="basket",
-                          z_support=float(self.skills.basket_floor()))
+                          z_support=float(self.pick_place.basket_floor()))
             fp = obj.footprint_world(rest, p.x, p.y, p.yaw)
             top = obj.poses[rest].top
             r_top = self.basket.inner_radius(min(top, self.basket.height)) - 0.004
@@ -271,7 +271,7 @@ class Generator:
             if p.support != "table":
                 continue
             try:
-                self.skills.plan_pick(self.home, p.item, world)
+                self.pick_place.plan_pick(self.home, p.item, world)
             except PlanError:
                 bad.append(p.item)
         return bad
@@ -385,7 +385,7 @@ class Generator:
     def plan_motions(self, placements, settled, held_item, plan):
         """Motion-plan the setup (grasping the initially held item) and every
         PDDL action. Raises PlanError if any step is infeasible."""
-        sk = self.skills
+        sk = self.pick_place
         world = {p.item: placement_at(self.items[p.item], p, *settled[p.item]) for p in placements}
         q = self.home.copy()
         setup = []

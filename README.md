@@ -16,10 +16,11 @@ camera, recognises the items (SAM 3), finds a grasp, plans a collision-free
 motion (MoveIt) and moves. The same programs run the real robot and a Gazebo
 simulation of the cell.
 
-The task planning, the state estimation and the motion planning are in one
-folder of plain Python, without ROS:
+The task planning, the state estimation, the motion planning and the skills
+(the PDDL actions performed by the robot) are in one folder of plain Python,
+without ROS:
 [`src/lab_replica/lab_replica/exercise/`](src/lab_replica/lab_replica/exercise/)
-([The exercise](#the-exercise-task-planning-state-estimation-motion-planning)).
+([The exercise](#the-exercise-task-planning-state-estimation-motion-planning-skills)).
 
 Repository: <https://github.com/guyazran/physAI-arm-ex> (it continues the
 earlier `lab-tamp` workspace; see [Reference](#reference)).
@@ -27,8 +28,8 @@ earlier `lab-tamp` workspace; see [Reference](#reference)).
 **Contents**
 
 1. [Run it: four scripts](#run-it-four-scripts)
-2. [The exercise](#the-exercise-task-planning-state-estimation-motion-planning):
-   task planning, state estimation, motion planning
+2. [The exercise](#the-exercise-task-planning-state-estimation-motion-planning-skills):
+   task planning, state estimation, motion planning, skills
 3. [Build (once)](#build-once)
 4. [Run it in simulation](#run-it-in-simulation)
 5. [Run it on the real robot](#run-it-on-the-real-robot): the
@@ -73,7 +74,7 @@ argument always says where to run: **`sim`** (the Gazebo simulation) or
 * How the scripts were tested (simulation, and the real-robot mode without
   the robot): [verification/README.md](verification/README.md#2026-10-14-the-consoles-and-the-depth-obstacle-model).
 
-## The exercise: task planning, state estimation, motion planning
+## The exercise: task planning, state estimation, motion planning, skills
 
 Everything the robot decides is in
 [`src/lab_replica/lab_replica/exercise/`](src/lab_replica/lab_replica/exercise/).
@@ -105,19 +106,43 @@ linked, so editing them needs no new build).
 | | `plan_place` | carry, straight down, open, straight up | `(put-on-table X)`, `(put-in-basket X)` |
 | | `sample_spots`, `is_free`, `find_table_spot` | where on the table an item can be put | `(put-on-table X)` |
 | | `scene_obstacles` | what MoveIt keeps clear of besides the table and the wall | every motion |
+| `skills.py` | `pick_up` | `(pick-up X)`: check the gripper is empty, look, find X, propose grasps in the image, plan the grasp, grasp, check the grip | every action |
+| | `put_on_table` | `(put-on-table X)`: check the gripper holds X, look, find a free table spot, put X there, check it let go | every action |
+| | `put_in_basket` | `(put-in-basket X)`: check the gripper holds X, look, find the basket's emptiest spot, drop X there, check it let go | every action |
+| `misc.py` (bonus) | `new_item` | `new-item: NAME`: find an unknown item by its text prompt (SAM 3), measure it, add it | `new-item:` in a console |
+| | `forget_item` | `forget-item: NAME`: forget an added item | `forget-item:` in a console |
+
+The robot performs the action `(name X)` with the function of the same name
+in `skills.py` (`-` becomes `_`), given the robot and the action's
+parameters: `(pick-up red-can)` is `pick_up(robot, "red-can")`. The console
+checks when it starts that every action of `domain.pddl` has its function.
+A skill returns a message or raises `ActionError` (or `PlanError`); after
+it succeeds the robot returns home, after it fails having moved the arm
+with nothing left in the gripper it opens the gripper and rises. Only the
+skill functions are public in `skills.py`; its helpers start with `_`.
 
 What these files may use from the rest of the code is in two files:
 
 * [`lab_replica/toolkit.py`](src/lab_replica/lab_replica/toolkit.py): the
   data types (`Placement`, `Estimate`, `Detection`, `ImageGrasp`, `Grasp`,
-  `Held`, `Box`), small geometric fits, the robot's kinematics (`ik_all`,
-  `fk`, `joint_limits`, the RG6's `depth_from_width` and `free_height`) and
-  the steps of a robot plan (`trajectory`, `gripper_step`).
+  `Held`, `Box`, `ActionError`), small geometric fits, the robot's
+  kinematics (`ik_all`, `fk`, `joint_limits`, the RG6's `depth_from_width`
+  and `free_height`), the steps of a robot plan (`trajectory`,
+  `gripper_step`) and the pictures of what the robot decided, for the
+  camera window (`show_image_grasps`, `show_grasp`, `show_table_spot`,
+  `show_drop`, `show_new_item`; after every look and every segmentation the
+  robot shows the masks and the items' names by itself).
 * [`lab_replica/moveit_client.py`](src/lab_replica/lab_replica/moveit_client.py):
   MoveIt without ROS: `plan_to_joints`, `plan_to_pose`, `cartesian_path`,
   `is_valid`, `set_obstacles`. Poses are 4x4 numpy matrices of the gripper's
   mounting face (`rg6_base_link`) in the world frame; joint paths are lists
   of the six joint angles.
+
+The skills also get the robot itself (`autonomy/executive.py`): looking
+(`robot.survey`, `robot.close_look`), the gripper (`robot.holding`,
+`robot.width`), MoveIt's planning scene (`robot.set_obstacles`), running a
+plan's steps (`robot.run`) and what the gripper holds; the top of
+`skills.py` (and of `misc.py`) lists everything.
 
 **Checking the exercise offline** (no robot, no simulation, no MoveIt), in
 the clone's top directory: each function is compared with cases whose answer
@@ -1395,17 +1420,17 @@ physAI-arm-ex/
       moveit/              MoveIt: lab_robot.srdf (planning group, collision pairs), kinematics, OMPL, limits
     lab_replica/           the Python library
       exercise/            THE EXERCISE (no ROS): task_planning/ (domain.pddl, problem.pddl, planning.py),
-                           state_estimation.py, motion_planning.py
+                           state_estimation.py, motion_planning.py, skills.py, misc.py (bonus)
       toolkit.py           what the exercise may use: data types, fits, kinematics, plan steps
       moveit_client.py     MoveIt (move_group's services) without ROS in its interface
       objects/             one file per physical object: can.py, spray_bottle.py, tape_roll.py,
                            cup.py, mug.py, block.py, basket.py, table.py, room.py, camera.py
       robot/               UR kinematics, RG6 linkage, robot collision points, the RG6 ROS driver
-      planning/            PDDL planner, pick-and-place skills, motion planning
+      planning/            PDDL planner, pick-and-place planner (pick_place.py: generator, tools), motion planning
       problems/            problem generator, replanning, writing a problem's files
       execution/           running a solution through ROS (runner, executor, goal check)
       perception/          wrist RealSense frames, SAM 3, item pose fitting, scene (section A.3)
-      autonomy/            executing PDDL actions on demand: executive.py, camera views,
+      autonomy/            executing PDDL actions on demand: executive.py (the robot the skills use), camera views,
                            depth_world.py (the depth seen: unknown obstacles, drop spots), annotate.py
       console.py           the action and goal consoles (prompt, start-up checks, running an action)
       tamp/                solving a goal: goal formulas, tasks, plan execution (section T.3; the planning is in exercise/)

@@ -55,12 +55,12 @@ def run(items):
 
     from lab_replica.execution.executor import Executor
     from lab_replica.execution.scene_state import ModelPoses
-    from lab_replica.planning.skills import Skills
+    from lab_replica.planning.pick_place import PickPlace
     from lab_replica.transforms import quat_to_matrix, rpy_to_matrix
 
     scene = config.load_cell()
     objs = objects.load_items()
-    sk = Skills(scene, objs, objects.load_basket(scene))
+    sk = PickPlace(scene, objs, objects.load_basket(scene))
     rclpy.init()
     ex = Executor()
     mp = ModelPoses(ex)
@@ -141,10 +141,10 @@ def run(items):
 def dry(items):
     import time
     import numpy as np
-    from lab_replica.planning.skills import Skills
+    from lab_replica.planning.pick_place import PickPlace
     scene = config.load_cell()
     objs = objects.load_items()
-    sk = Skills(scene, objs, objects.load_basket(scene))
+    sk = PickPlace(scene, objs, objects.load_basket(scene))
     q = np.array(scene["robot"]["home_joints"])
     world = {p.item: p for p in TEST}
     for p in TEST:

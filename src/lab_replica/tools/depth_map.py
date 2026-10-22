@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..
 
 from lab_replica import config, objects  # noqa: E402
 from lab_replica.autonomy.depth_world import DepthWorld  # noqa: E402
-from lab_replica.autonomy.obstacles import PerceivedSkills  # noqa: E402
+from lab_replica.autonomy.obstacles import PerceivedPickPlace  # noqa: E402
 from lab_replica.perception.rgbd import Frame  # noqa: E402
 from lab_replica.perception.scene import ScenePerception, draw, load_perception_config  # noqa: E402
 from lab_replica.planning.motion import PlanError  # noqa: E402
@@ -64,7 +64,7 @@ def main():
         print(f"  {'unseen space' if o.unseen else 'unrecognised'} at ({c[0]:.3f}, {c[1]:.3f}), "
               f"{o.z_top * 100:.0f} cm high")
     if args.pick:
-        sk = PerceivedSkills(cell, items, basket, basket_xy=scene.basket_xy, depth=depth)
+        sk = PerceivedPickPlace(cell, items, basket, basket_xy=scene.basket_xy, depth=depth)
         world = scene.world()
         try:
             steps, q_end, held = sk.plan_pick(frames[-1].q, args.pick, world, max_candidates=32)

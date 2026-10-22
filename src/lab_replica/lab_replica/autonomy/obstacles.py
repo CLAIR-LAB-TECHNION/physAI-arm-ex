@@ -1,6 +1,6 @@
 """The planner on perceived scenes, and helpers for the depth seen by the camera.
 
-PerceivedSkills is the pick-and-place planner (planning/skills.py) with the
+PerceivedPickPlace is the pick-and-place planner (planning/pick_place.py) with the
 obstacle model replaced: instead of the item models at their fitted poses it
 keeps clear of what the wrist camera measured (depth_world.DepthWorld). The
 helpers here remove the robot's own pixels from the depth and make coarse
@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ..planning.skills import Skills
+from ..planning.pick_place import PickPlace
 from ..planning.placement import placement_pose
 from ..robot.collision import Box, object_box
 
@@ -121,7 +121,7 @@ def height_map(frames, cell, x_range=None, y_range=None, robot_radius=0.17, stri
     return H, x0, y0
 
 
-class PerceivedSkills(Skills):
+class PerceivedPickPlace(PickPlace):
     """The pick-and-place planner with what the camera saw as the obstacles.
 
     `world` ({item: Placement}) still says which items are where (grasps,

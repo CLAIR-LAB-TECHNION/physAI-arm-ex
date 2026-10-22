@@ -1,4 +1,6 @@
-"""Pick and place skills for the PDDL actions, as collision-checked motion plans.
+"""Pick and place for the PDDL actions, as collision-checked motion plans
+(the planner of the problem generator and of the tools; the robot's skills
+are exercise/skills.py).
 
 A plan is a list of steps:
   {"kind": "traj", "label": str, "points": [6-list, ...], "times": [s, ...]}
@@ -11,7 +13,6 @@ the generator accepts can be executed.
 """
 
 import math
-from dataclasses import dataclass
 
 import numpy as np
 
@@ -21,7 +22,7 @@ from ..robot.kinematics import robot_urdf
 from ..transforms import rpy_to_matrix, wrap
 from .geometry2d import polygon_inside_circle, polygons_intersect
 from .motion import PlanError, Planner, gripper_pose, psi_for_closing
-from .placement import Placement, placement_pose
+from .placement import Held, Placement, placement_pose
 
 OPEN_MARGIN = 0.016         # extra opening on each side of the object before closing
 SQUEEZE = 0.025             # close this much below the object width (force limited)
@@ -34,18 +35,7 @@ MARGIN = 0.008              # clearance to obstacles for collision checks
 WALL_MARGIN = 0.03          # clearance to the wall behind the table (cell.yaml room.wall_y)
 
 
-@dataclass
-class Held:
-    item: str
-    rest: str
-    width: float          # object width between the pads
-    tip_z: float          # fingertip height above the object's support at grasp
-    offset_obj: tuple     # grasp centre in the rested frame (x, y)
-    yaw_rel: float        # object yaw minus gripper yaw
-    top: float            # object height in this resting pose
-
-
-class Skills:
+class PickPlace:
     """Motion plans for the PDDL actions in one cell (cell.yaml) with the given
     item models and basket."""
 

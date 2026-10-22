@@ -1,4 +1,4 @@
-"""Execute motion plans (see planning/skills.py) on the simulated or the real robot.
+"""Execute motion plans (see planning/pick_place.py) on the simulated or the real robot.
 
 The arm is driven through a FollowJointTrajectory action:
   simulation:  /joint_trajectory_controller/follow_joint_trajectory

@@ -1,32 +1,29 @@
-"""Execute PDDL actions of the order-assembly domain on demand, closed loop.
+"""The robot that performs the PDDL actions of the order-assembly domain on
+demand, closed loop: each action is performed by its skill in the exercise
+(exercise/skills.py: (pick-up X) by pick_up(robot, X), ...), given this
+executive as the robot; the bonus new-item: / forget-item: by
+exercise/misc.py. The executive checks the skills against the domain
+(exercise/task_planning/domain.pddl) when it starts, and after a skill:
+returns home when it succeeded, opens the gripper and rises when it failed
+having moved the arm with nothing left in the gripper.
 
-    (pick-up X)        look (survey view; also from the front if X is not
-                       recognised from above), find X, look at it from
-                       closer, plan a collision-free top-down grasp, grasp,
-                       lift, return home. Applicable when the gripper is empty.
-    (put-in-basket X)  look, find the basket and how high things are piled in
-                       it, carry X above its emptiest spot and drop it there
-                       (it may land on other items), return home. Applicable
-                       when the gripper holds something.
-    (put-on-table X)   look, put X down on the free table spot nearest to
-                       where it was picked up (or to target_xy), return home.
-
-"Empty" and "holding" come from the gripper (the RG6's grip-detected flag);
-nothing else of the PDDL state is assumed. Everything about the scene comes
-from the wrist camera: item poses (perception/ with the exercise's
-state_estimation.py: which item is which, where it rests), the basket, the
-depth seen (depth_world.py), and the grasp (state_estimation.py: proposed in
-the image, then turned into a 3D gripper pose). The motions are the
-exercise's (motion_planning.py), planned by MoveIt (moveit_client.py) with
-the table, the wall and what the camera saw in its planning scene.
+What the skills use (listed in exercise/skills.py and misc.py): the gripper
+(the RG6's grip-detected flag and width), the wrist camera's views (item
+poses from perception/ with the exercise's state_estimation.py, the basket,
+the depth seen: depth_world.py), MoveIt (moveit_client.py, with the table,
+the wall and what the camera saw in its planning scene), running a plan's
+steps, and what the gripper holds (kept across restarts). After every look
+and every segmentation the camera window shows what was recognised.
 
 The same code runs in simulation and on the real robot; it talks to the arm
 and gripper through execution.executor.Executor and to the camera through
 the RealSense topics.
 """
 
+import inspect
 import math
 import os
+import re
 import time
 from dataclasses import dataclass
 
@@ -36,50 +33,74 @@ import rclpy
 from std_msgs.msg import Bool, Float64, String
 
 from .. import config, objects
+from ..exercise import misc
 from ..exercise import motion_planning as mp
-from ..exercise import state_estimation as se
+from ..exercise import skills
+from ..exercise.task_planning.planning import DOMAIN_FILE
 from ..moveit_client import MoveIt
 from ..perception.rgbd import RGBDCamera
 from ..perception.scene import ScenePerception, load_perception_config
 from ..planning.motion import PlanError
-from ..planning.placement import Placement
-from ..planning.skills import Held
+from ..planning.placement import Held, Placement
 from ..robot import rg6
-from ..toolkit import box_in_world, fk
-from ..transforms import inv_tf, wrap
+from ..toolkit import ActionError, box_in_world, fk, show_detections, show_masks
+from ..transforms import inv_tf
 from . import annotate
 from .depth_world import DepthWorld
-from .drop import drop_spots, spread
+from .drop import drop_spots
 from .views import down_view, hand_eye, view_from_config
-
-ACTIONS = ("pick-up", "put-in-basket", "put-on-table")
-DROP_CLEARANCE = 0.02    # dropping into the basket: the item's bottom this far above the rim or the pile
-
-
-class ActionError(RuntimeError):
-    pass
 
 
 @dataclass
 class HeldItem:
     item: str
-    held: Held              # how it is held (planning.skills.Held)
+    held: Held              # how it is held
     source: Placement = None  # where it was picked up
     assumed: bool = False   # not seen being picked: nominal grasp assumed
     depth_before: object = None  # DepthWorld of the survey before the pick-up (not saved)
 
 
-def parse_action(text):
-    """'(pick-up green-mug)' -> ('pick-up', 'green-mug')."""
+def domain_actions(domain_file=DOMAIN_FILE):
+    """{action name: number of parameters} of a PDDL domain file."""
+    with open(domain_file) as f:
+        text = re.sub(r";[^\n]*", "", f.read())
+    return {name: params.count("?")
+            for name, params in re.findall(r"\(:action\s+([\w-]+)\s+:parameters\s*\(([^)]*)\)", text)}
+
+
+def skill_functions(actions):
+    """{action name: its skill in exercise/skills.py}; raises ActionError
+    naming the actions without a skill that takes their parameters."""
+    found, problems = {}, []
+    for name, n in actions.items():
+        fn = getattr(skills, name.replace("-", "_"), None)
+        if not callable(fn):
+            problems.append(f"no function {name.replace('-', '_')}(robot, ...) for ({name} ...)")
+            continue
+        try:
+            inspect.signature(fn).bind(None, *range(n))
+        except TypeError:
+            problems.append(f"{fn.__name__} does not take the robot and the {n} parameter(s) of ({name} ...)")
+            continue
+        found[name] = fn
+    if problems:
+        raise ActionError("exercise/skills.py: " + "; ".join(problems))
+    return found
+
+
+def parse_action(text, actions):
+    """'(pick-up green-mug)' -> ('pick-up', ['green-mug']), checked against
+    `actions` ({name: number of parameters})."""
     parts = text.strip().strip("()").split()
-    if len(parts) != 2 or parts[0] not in ACTIONS:
-        raise ActionError(f"not an action of the domain: {text!r} (expected '(<{'|'.join(ACTIONS)}> <item>)')")
-    return parts[0], parts[1]
+    if not parts or parts[0] not in actions or len(parts) - 1 != actions[parts[0]]:
+        forms = " | ".join(f"({a}{' <item>' * n})" for a, n in actions.items())
+        raise ActionError(f"not an action of the domain: {text!r} (expected {forms})")
+    return parts[0], parts[1:]
 
 
 class ActionExecutive:
-    """`node` is an execution.executor.Executor (arm and gripper clients); it
-    is spun from here with spin_once."""
+    """The robot the skills act with. `node` is an execution.executor.Executor
+    (arm and gripper clients); it is spun from here with spin_once."""
 
     def __init__(self, node, log=print, perception=None, run_dir=None, return_home=True, save_frames=False):
         self.node = node
@@ -116,6 +137,10 @@ class ActionExecutive:
         self.on_observation = None   # f(colour BGR, depth BGR, title) for each annotated view
         self.action = ""
         self.home = np.array(self.cell["robot"]["home_joints"], float)
+        self.actions = domain_actions()
+        self.skills = skill_functions(self.actions)
+        self._moved = False      # the skill ran steps (robot.run) in this action
+        self._placed = {}        # {item: Placement} put down in this action
 
     # ---- what is in the gripper (survives restarts) ---------------------------------------
 
@@ -152,6 +177,20 @@ class ActionExecutive:
         self.held = held
         self._save_held()
 
+    def now_holding(self, held, source=None, assumed=False):
+        """The gripper holds held.item from now on, as `held` (Held), picked
+        up from `source` (Placement, or None); `assumed`: not seen being picked up."""
+        depth = self.scene.depth if self.scene is not None and not assumed else None
+        self.set_held(HeldItem(held.item, held, source, assumed, depth_before=depth))
+
+    def now_empty(self):
+        """The gripper holds nothing from now on."""
+        self.set_held(None)
+
+    def placed(self, item, placement):
+        """`item` was just put down at `placement`: kept clear of on the way home."""
+        self._placed[item] = placement
+
     # ---- small helpers ------------------------------------------------------------------
 
     def phase(self, text):
@@ -164,6 +203,10 @@ class ActionExecutive:
         t0 = time.time()
         while time.time() - t0 < seconds:
             rclpy.spin_once(self.node, timeout_sec=0.02)
+
+    def wait(self, seconds):
+        """Let the robot's state (gripper, joints) come in for `seconds`."""
+        self.spin(seconds)
 
     def holding(self):
         """Grip detected by the gripper (after a fresh reading)."""
@@ -184,7 +227,21 @@ class ActionExecutive:
     def now(self):
         return self.node.get_clock().now().nanoseconds * 1e-9
 
+    def current(self):
+        """The arm's joints now."""
+        return self.node.current()
+
     def run(self, steps):
+        """Perform a plan's steps (a skill's motions); ActionError when one fails."""
+        self._moved = True
+        try:
+            self._run(steps)
+        except ActionError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            raise ActionError(f"{type(e).__name__}: {e}") from e
+
+    def _run(self, steps):
         self.node.run_steps(steps, log=lambda s: self.log(s))
 
     def held_box(self, held):
@@ -240,7 +297,7 @@ class ActionExecutive:
             self.log(f"  {e}; looking without what was seen before")
             self.set_obstacles(None)
             steps = mp.plan_view(self.mv, q, T_cam, self.T_grip_cam, self.width(), box, label)
-        self.run(steps)
+        self._run(steps)
         return self.capture()
 
     def survey(self, exclude=(), held=None, target=None):
@@ -304,7 +361,6 @@ class ActionExecutive:
             return None
         self.phase(f"recognising {item} from closer")
         sub = self.perception.observe([frame], [float(cl.get("weight", 1.2))], basket_xy=scene.basket_xy)
-        self.close_detection = sub.detections.get(item)
         for it, d in sub.detections.items():
             old = scene.detections.get(it)
             if old is None:
@@ -340,6 +396,28 @@ class ActionExecutive:
                 continue
         return None
 
+    def grasp_mask(self, frame, scene, item):
+        """The pixels of `item` in `frame` for proposing a grasp: its SAM 3
+        mask there joined with the silhouette of its estimated model (SAM 3
+        may miss a part, e.g. the spray bottle's grey head), or without a
+        mask there the silhouette grown by 5 mm (the estimate's error); not
+        within 3 pixels of other items' masks, and only what stands above
+        the table."""
+        from ..perception.scene import height_image, model_mask
+        d = scene.detections[item]
+        m = model_mask(frame, self.items[item], d.estimate.placement)
+        if d.frame is frame:
+            m |= d.mask
+        else:
+            grow = int(round(frame.K[0, 0] * 0.005 / max(0.2, float(np.nanmedian(frame.depth)))))
+            m = cv2.dilate(m.astype(np.uint8), np.ones((2 * grow + 1, 2 * grow + 1), np.uint8)) > 0
+        others = np.zeros(m.shape, np.uint8)
+        for k, o in scene.detections.items():
+            if k != item and o.frame is frame:
+                others |= o.mask.astype(np.uint8)
+        m &= ~(cv2.dilate(others, np.ones((7, 7), np.uint8)) > 0)
+        return m & (height_image(frame) > self.table_z + 0.005)
+
     def map_depth(self, scene, frames, held=None):
         """scene.depth: the obstacle model from these frames (depth_world.py)."""
         box = self.held_box(held)
@@ -358,8 +436,20 @@ class ActionExecutive:
     def publish_detections(self, frame, scene, title):
         """The frame annotated with what was found in it (masks, the items'
         estimated models, names and scores, the basket, obstacles)."""
-        table_z = self.cell["table"]["surface_z"]
-        self.show(frame, lambda v: annotate.draw_perception(v, scene, self.items, self.basket, table_z, title), title)
+        show_detections(self, frame, scene, title)
+
+    def segment(self, frame, prompt):
+        """SAM 3's masks of a text prompt in `frame`, best first (each with
+        .score and .mask); shown in the camera window."""
+        found = self.perception.sam.segment(frame.rgb, [prompt], threshold=self.cfg["sam3"]["threshold"])[prompt]
+        show_masks(self, frame, [(f"{prompt} {inst.score:.2f}", inst.mask) for inst in found],
+                   f"SAM 3: {prompt!r}")
+        return found
+
+    def points(self, frame, mask, erode_px=None):
+        """The world points (N, 3) of a mask's pixels, above the table and away
+        from the robot; the mask eroded by erode_px (default perception.yaml's)."""
+        return self.perception._points(frame, mask, erode_px=erode_px)
 
     def show(self, frame, draw, title):
         """An annotated observation: draw(view) -> BGR image, drawn on the
@@ -425,229 +515,53 @@ class ActionExecutive:
             region["accept"] = lambda fp, top: depth.in_view(fp, top + 0.01)
         return region
 
-    def assumed_held(self, item):
-        """How `item` is probably held when it was not picked by this
-        executive: its first resting pose's grasp nearest to the measured width."""
-        obj = self.items[item]
-        w = self.width()
-        best = None
-        for rest in obj.spec["stable_poses"]:
-            for g in obj.poses[rest].grasps:
-                d = abs(g.width - w)
-                if best is None or d < best[0]:
-                    best = (d, rest, g)
-        _, rest, g = best
-        yaw_rel = wrap(math.pi / 2 - (g.yaws[0] if not g.continuous else 0.0))
-        return HeldItem(item, Held(item, rest, g.width, g.tip_z, tuple(g.center), yaw_rel, obj.poses[rest].top),
-                        assumed=True)
+    def drop_spots(self, scene, held, yaws):
+        """Where the held item (Held) can be dropped into the basket with the
+        item yaws `yaws` (drop.DropSpots: .spots best first, each (cost, x, y,
+        yaw, z_pile); .heights, .z_floor), from the depth `scene` saw."""
+        fp = self.items[held.item].poses[held.rest].footprint
+        return drop_spots(scene.frames, self.cell, self.basket, scene.basket_xy, fp, yaws, depth=scene.depth,
+                          items=[k for k in scene.detections if k != held.item])
 
     # ---- the actions --------------------------------------------------------------------------
 
     def execute(self, action, target_xy=None):
-        """Run one action. Returns (success, message)."""
-        name, item = parse_action(action)
-        if item not in self.items:
-            raise ActionError(f"unknown item {item!r}")
-        t0 = time.time()
+        """Perform one action by its skill (exercise/skills.py). target_xy
+        goes to a skill that takes it (put_on_table). Returns (success, message)."""
+        name, args = parse_action(action, self.actions)
+        for item in args:
+            if item not in self.items:
+                raise ActionError(f"unknown item {item!r}")
+        skill = self.skills[name]
+        kwargs = {"target_xy": target_xy} if "target_xy" in inspect.signature(skill).parameters else {}
         self.log(f"== {action}")
         self.action = action
+        return self._perform(lambda: skill(self, *args, **kwargs), action)
+
+    def _perform(self, act, title):
+        """Run act() (a skill): (success, its message, or the error). After
+        it succeeds return home; after it fails having moved the arm with
+        nothing left in the gripper, open and rise."""
+        t0 = time.time()
+        self._moved = False
+        self._placed = {}
         try:
-            if name == "pick-up":
-                msg = self.pick_up(item)
-            else:
-                msg = self.put(item, "basket" if name == "put-in-basket" else "table", target_xy)
+            msg = act()
         except (ActionError, PlanError) as e:
+            if self._moved and not self._holding_or_unknown():
+                self.recover()
             self.phase(f"failed: {e}")
             return False, str(e)
-        self.phase(f"done: {action} ({time.time() - t0:.0f} s)")
+        if self.return_home:
+            self.go_home()
+        self.phase(f"done: {title} ({time.time() - t0:.0f} s)")
         return True, msg
 
-    def pick_up(self, item):
-        if self.holding():
-            raise ActionError(f"not applicable: the gripper is holding "
-                              f"{self.held.item if self.held else 'something'}")
-        self.set_held(None)
-        scene = self.survey(target=item)
-        if item not in scene.detections:
-            raise ActionError(f"{item} not found")
-        self.close_detection = None
-        close = self.close_look(scene, item)
-        p = scene.detections[item].estimate.placement
-        self.log(f"  {item}: {p.rest} on the {p.support} at ({p.x:.3f}, {p.y:.3f}), yaw "
-                 f"{math.degrees(p.yaw):.0f} deg")
-        # The grasps, proposed in a top-down view: the closer look, else the top view.
-        self.phase(f"finding a grasp of {item}")
-        frame = close if close is not None else self.best_frame(scene)
-        mask = self.grasp_mask(frame, scene, item)
-        image_grasps = se.grasp_in_image(frame, mask)
-        if not image_grasps:
-            raise ActionError(f"no grasp of {item} in the image: too few depth pixels in its mask")
-        grasps = [se.grasp_pose(frame, g, mask, self.table_z) for g in image_grasps]
-        self.show(frame, lambda v: annotate.draw_image_grasp(v, mask, image_grasps, f"grasp {item} in the image"),
-                  f"grasp {item} in the image")
-        g = grasps[0]
-        self.log(f"  {len(grasps)} grasp(s); the first across {g.width * 1000:.0f} mm at ({g.pose[0, 3]:.3f}, "
-                 f"{g.pose[1, 3]:.3f}), fingertips {1000 * (g.tips_z - self.table_z):.0f} mm above the table")
-        grasps = [g for g in grasps if g.width <= rg6.MAX_WIDTH - 0.01]
-        if not grasps:
-            raise ActionError(f"{item} is too wide for the RG6 across every grasp")
-        self.phase(f"planning the grasp of {item}")
-        self.set_obstacles(scene, exclude=(item,))
-        q = self.node.current()
-        steps, q_end, grasp, T = mp.plan_pick(self.mv, q, grasps, self.force)
-        k = next(k for k, g in enumerate(grasps) if g is grasp)
-        self.log(f"  grasp {k + 1}: across {grasp.width * 1000:.0f} mm, fingertips "
-                 f"{1000 * (grasp.tips_z - self.table_z):.0f} mm above the table")
-        held = self.held_from_grasp(item, p, grasp, T)
-        open_w = next(s["width"] for s in steps if s.get("label") == "open")
-        self.show(close if close is not None else self.best_frame(scene),
-                  lambda v: annotate.draw_grasp(v, self.items[item], p, held, open_w, self.force,
-                                                f"grasp {item}"), f"grasp {item}")
-        self.phase(f"picking up {item}")
+    def _holding_or_unknown(self):
         try:
-            self.run(steps)
-        except Exception as e:
-            self.recover(scene)
-            raise ActionError(f"grasp failed: {e}")
-        self.set_held(HeldItem(item, held, p, depth_before=scene.depth))
-        if not self.holding():
-            if abs(self.width() - held.width) < 0.012:
-                self.log(f"  grip flag off but the fingers are {self.width() * 1000:.0f} mm apart: holding {item}")
-            else:
-                self.recover(scene)
-                self.set_held(None)
-                raise ActionError(f"{item} slipped out of the gripper")
-        if self.return_home:
-            self.go_home(held)
-        return f"holding {item} (width {self.width() * 1000:.0f} mm)"
-
-    def grasp_mask(self, frame, scene, item):
-        """The pixels of `item` in `frame` for proposing a grasp: its SAM 3
-        mask there joined with the silhouette of its estimated model (SAM 3
-        may miss a part, e.g. the spray bottle's grey head), or without a
-        mask there the silhouette grown by 5 mm (the estimate's error); not
-        within 3 pixels of other items' masks, and only what stands above
-        the table."""
-        from ..perception.scene import height_image, model_mask
-        d = scene.detections[item]
-        m = model_mask(frame, self.items[item], d.estimate.placement)
-        if d.frame is frame:
-            m |= d.mask
-        else:
-            grow = int(round(frame.K[0, 0] * 0.005 / max(0.2, float(np.nanmedian(frame.depth)))))
-            m = cv2.dilate(m.astype(np.uint8), np.ones((2 * grow + 1, 2 * grow + 1), np.uint8)) > 0
-        others = np.zeros(m.shape, np.uint8)
-        for k, o in scene.detections.items():
-            if k != item and o.frame is frame:
-                others |= o.mask.astype(np.uint8)
-        m &= ~(cv2.dilate(others, np.ones((7, 7), np.uint8)) > 0)
-        return m & (height_image(frame) > self.table_z + 0.005)
-
-    def held_from_grasp(self, item, p, grasp, T):
-        """How `item`, resting as placement p, is held after the grasp with
-        the gripper at pose T (planning.skills.Held)."""
-        gx, gy = T[0, 3], T[1, 3]
-        psi = math.atan2(T[1, 0], T[0, 0])
-        c, s = math.cos(p.yaw), math.sin(p.yaw)
-        dx, dy = gx - p.x, gy - p.y
-        offset = (c * dx + s * dy, -s * dx + c * dy)       # in the item's rested frame
-        return Held(item, p.rest, float(grasp.width), float(grasp.tips_z - p.z_support),
-                    (float(offset[0]), float(offset[1])), float(wrap(p.yaw - psi)),
-                    float(self.items[item].poses[p.rest].top))
-
-    def put(self, item, support, target_xy=None):
-        if not self.holding():
-            raise ActionError("not applicable: the gripper is empty")
-        if self.held is None or self.held.item != item:
-            if self.held is not None and not self.held.assumed:
-                raise ActionError(f"the gripper holds {self.held.item}, not {item}")
-            self.set_held(self.assumed_held(item))
-            self.log(f"  assuming {item} is held at its nominal grasp")
-        held = self.held.held
-        scene = self.survey(exclude=(item,), held=held)
-        self.phase(f"planning where to put {item}")
-        self.set_obstacles(scene, exclude=(item,))
-        q = self.node.current()
-        tgt, steps = self._plan_put(q, held, support, scene, target_xy)
-        self.log(f"  putting {item} at ({tgt.x:.3f}, {tgt.y:.3f}) on the {support}")
-        self.phase(f"putting {item} {'in the basket' if support == 'basket' else 'on the table'}")
-        self.run(steps)
-        self.spin(0.3)
-        if self.holding():
-            raise ActionError(f"{item} is still in the gripper after release")
-        self.set_held(None)
-        if self.return_home:
-            self.set_obstacles(scene, exclude=(item,), placed={item: tgt})
-            self.go_home(None)
-        return f"put {item} at ({tgt.x:.3f}, {tgt.y:.3f}) on the {support}"
-
-    def _plan_put(self, q0, held, support, scene, target_xy):
-        """(target placement, steps) for putting the held item down."""
-        if support == "basket":
-            return self._plan_drop(q0, held, scene)
-        region = self.table_region(scene.basket_xy, getattr(scene, "depth", None))
-        prefer = target_xy if target_xy is not None and len(target_xy) == 2 else (
-            (self.held.source.x, self.held.source.y) if self.held.source is not None else (0.45, -0.10))
-        model = self.items[held.item]
-        # What the item must not be put on: the other items, the unknown things seen.
-        others = [model_fp for k, d in scene.detections.items() if k != held.item
-                  for model_fp in [self.items[k].footprint_world(d.estimate.placement.rest, d.estimate.placement.x,
-                                                                 d.estimate.placement.y, d.estimate.placement.yaw)]]
-        others += [o.polygon for o in getattr(scene, "obstacles", []) if o.support == "table"]
-        tgt, steps = mp.find_table_spot(self.mv, q0, held, model, self.held_box(held), region, others,
-                                        tuple(prefer), self.table_z, self.force,
-                                        margin=self.cell["placement"]["object_clearance"],
-                                        max_tries=self.cfg.get("put_max_tries", 80))
-        fp = model.footprint_world(held.rest, tgt.x, tgt.y, tgt.yaw)
-        self.show(self.best_frame(scene),
-                  lambda v: annotate.draw_table(v, self.cell, self.items, self.basket, scene, region, fp, tgt,
-                                                self.held.source, held.item, f"put {held.item} here (free spot)"),
-                  "put on the table")
-        return tgt, steps
-
-    def _plan_drop(self, q0, held, scene):
-        """Drop the held item above the emptiest spot of the basket (it may
-        land on what is there). Only the motion can fail, so the next best
-        spots are tried, then higher releases."""
-        model = self.items[held.item]
-        fp = model.poses[held.rest].footprint
-        yaws = [wrap(k * math.pi / 4 + held.yaw_rel) for k in range(-4, 4)]
-        drops = drop_spots(scene.frames, self.cell, self.basket, scene.basket_xy, fp, yaws,
-                           depth=scene.depth, items=[k for k in scene.detections if k != held.item])
-        rim = self.table_z + self.basket.height
-        z_floor = self.table_z + self.basket.floor
-        box = self.held_box(held)
-        errors = []
-        # The best spots with the yaw that fits there, then any yaw; then higher.
-        tries = [(s, [s[3]]) for s in spread(drops.spots)] + [(s, yaws) for s in spread(drops.spots, 4)]
-        for raise_ in (0.0, 0.04):
-            for (cost, x, y, yaw0, z_pile), only in tries:
-                z_support = max(z_floor, z_pile)
-                gap = max(rim, z_pile) + DROP_CLEARANCE + raise_ - z_support
-                for yaw in only:
-                    try:
-                        steps = mp.plan_place(self.mv, q0, held, box, x, y, yaw, z_support, gap, self.force,
-                                              approach=mp.DROP_APPROACH)
-                    except PlanError as e:
-                        errors.append(str(e))
-                        continue
-                    tgt = Placement(held.item, held.rest, float(x), float(y), float(yaw), support="basket",
-                                    z_support=float(z_support))
-                    fpw = model.footprint_world(held.rest, tgt.x, tgt.y, tgt.yaw)
-                    z_drop = z_support + gap
-                    pile = z_pile - drops.z_floor
-                    self.log(f"  dropping from {z_drop * 100:.0f} cm onto "
-                             + ("the floor" if pile < 0.01 else f"a pile {pile * 100:.0f} cm high"))
-                    self.show(self.best_frame(scene),
-                              lambda v: annotate.draw_drop(v, self.basket, scene.basket_xy, self.table_z, drops, fpw,
-                                                           tgt, z_drop, held.item,
-                                                           f"drop {held.item}: emptiest spot"),
-                              "drop in the basket")
-                    return tgt, steps
-        if errors and all("out of the arm's reach" in e for e in errors):
-            raise PlanError(f"every drop spot is out of the arm's reach with {held.item} (the basket is too far "
-                            f"for it)")
-        raise PlanError("no drop into the basket: " + ("; ".join(sorted(set(errors))[:3]) or "no drop spot"))
+            return self.holding()
+        except ActionError:
+            return True
 
     # ---- items added at run time ------------------------------------------------------------
 
@@ -656,135 +570,44 @@ class ActionExecutive:
         self.items[name] = objects.make_item(name, spec)
         self.perception.add_prompts(name, spec["prompts"])
 
-    def forget_item(self, name):
+    def remove_item(self, name):
+        """Forget the item `name`: its model and its SAM 3 prompts."""
         self.items.pop(name, None)
         self.perception.remove_prompts(name)
 
     def new_item(self, name, prompt, shape=None):
-        """Find an item that is not known yet on the table by its text
-        prompt, measure it and add it (add_item). Returns (success, message,
+        """Find an item that is not known yet by its text prompt, measure it
+        and add it (exercise/misc.py new_item). Returns (success, message,
         spec); the spec is an objects/measured.py spec."""
-        t0 = time.time()
         self.log(f"== new item {name}: {prompt!r}")
         self.action = f"new-item {name}"
-        try:
-            spec, msg = self._measure_new(name, prompt, shape)
-        except (ActionError, PlanError) as e:
-            self.phase(f"failed: {e}")
-            return False, str(e), None
-        self.add_item(name, spec)
-        self.phase(f"done: new item {name} ({time.time() - t0:.0f} s)")
-        return True, msg, spec
+        out = {}
 
-    def _find_new(self, frame, prompt, known, basket_xy, near=None):
-        """(SAM score, mask, world points) of the best mask of `prompt` in
-        `frame` on the table, or None. Masks of known items that SAM 3 named
-        better are skipped; `near` (x, y) keeps only masks within 5 cm of it."""
-        from ..perception.scene import _overlap
-        res = self.perception.sam.segment(frame.rgb, [prompt], threshold=self.cfg["sam3"]["threshold"])[prompt]
-        best = None
-        for inst in res:
-            if any(d.frame is frame and d.sam_score >= inst.score and _overlap(d.mask, inst.mask) > 0.5
-                   for d in known.values()):
-                continue
-            # Not eroded: the size is read from the mask's outline (eroding
-            # 1 px made a 60 x 30 mm block 56 x 27 mm in simulation).
-            pts = self.perception._points(frame, inst.mask, erode_px=0)
-            pts = pts[pts[:, 2] > self.cell["table"]["surface_z"] + 0.004]
-            if len(pts) < 30:
-                continue
-            c = np.median(pts[:, :2], axis=0)
-            if basket_xy is not None and math.hypot(*(c - basket_xy)) < self.basket.r_top + 0.01:
-                self.log(f"  {prompt!r} (score {inst.score:.2f}) is in the basket: skipped")
-                continue
-            if near is not None and math.hypot(*(c - np.asarray(near))) > 0.05:
-                continue
-            if best is None or inst.score > best[0]:
-                best = (inst.score, inst.mask, pts)
-        return best
+        def act():
+            out["spec"], msg = misc.new_item(self, name, prompt, shape)
+            return msg
 
-    def _measure_new(self, name, prompt, shape):
-        from ..perception.estimate import estimate_item, measure_item
-        if self.holding():
-            raise ActionError("the gripper is holding something: put it down first, then measure the new item")
-        scene = self.survey()
-        self.phase(f"looking for {prompt!r} (SAM 3)")
-        found = None
-        for f in scene.frames:
-            hit = self._find_new(f, prompt, scene.detections, scene.basket_xy)
-            if hit is not None and (found is None or hit[0] > found[0]):
-                found = hit + (f,)
-        if found is None:
-            raise ActionError(f"nothing on the table looks like {prompt!r} to SAM 3 "
-                              f"(try another description: prompt=\"...\")")
-        score, mask, pts, frame = found
-        c = np.median(pts[:, :2], axis=0)
-        self.log(f"  {prompt!r} found with score {score:.2f} at ({c[0]:.3f}, {c[1]:.3f})")
-        notes = []
-        cl = self.cfg.get("close_look", {})
-        close = self.look_down_at(c[0], c[1], cl.get("height", 0.5))
-        if close is not None:
-            self.phase(f"measuring {name} from closer")
-            hit = self._find_new(close, prompt, {}, scene.basket_xy, near=c)
-            if hit is not None:
-                score, mask, pts = hit
-                frame = close
-            else:
-                notes.append("not found again from closer: measured from the survey")
-        else:
-            notes.append("no closer view reachable: measured from the survey")
-        table_z = self.cell["table"]["surface_z"]
-        m = measure_item(pts, table_z, shape)
-        if m is None:
-            raise ActionError(f"too few depth points on {prompt!r} to measure it")
-        shape, size, more = m
-        notes += more
-        width, height = (size[0] if shape == "round" else size[1]), size[-1]
-        if width > rg6.MAX_WIDTH - 0.01:
-            raise ActionError(f"{name} is {width * 1000:.0f} mm wide, too wide for the RG6 "
-                              f"(it opens {rg6.MAX_WIDTH * 1000:.0f} mm)")
-        if height > self.cfg["max_item_height"]:
-            raise ActionError(f"{name} is {height * 100:.0f} cm tall; items may be at most "
-                              f"{self.cfg['max_item_height'] * 100:.0f} cm (perception.yaml max_item_height)")
-        if height < 0.015:
-            notes.append(f"only {height * 1000:.0f} mm tall: the pads stop 8 mm above the table "
-                         f"(objects/base.py TIP_CLEARANCE) and hold little of it")
-        color = np.median(frame.rgb[mask], axis=0) / 255.0
-        spec = {"kind": "measured", "shape": shape, "size": [float(v) for v in size], "mass": 0.1,
-                "color": [round(float(v), 3) for v in color],
-                "stable_poses": ["upright" if shape == "round" else "flat"], "prompts": [prompt],
-                "measured": time.strftime("%Y-%m-%d %H:%M")}
-        # The new model must explain the points it was made from.
-        model = objects.make_item(name, spec)
-        est = estimate_item(model, pts, table_z, self.basket, scene.basket_xy)
-        if est is None or est.plausibility < 0.5:
-            notes.append(f"its model fits its own points badly (plausibility "
-                         f"{0 if est is None else est.plausibility:.2f})")
-        dims = " x ".join(f"{v * 1000:.0f}" for v in size) + " mm"
-        what = f"{shape} {dims}" + (" (diameter x height)" if shape == "round" else " (length x width x height)")
-        self.show(frame, lambda v: annotate.draw_measure(v, mask, model, est.placement if est else None, dims,
-                                                         f"new item {name}: {what}",
-                                                         f"{prompt!r}, SAM 3 score {score:.2f}; magenta: its mask, "
-                                                         f"green: the model made from it"), f"new item {name}")
-        self.log(f"  {name}: {what}; " + "; ".join(notes))
-        if self.return_home:
-            self.set_obstacles(scene)
-            self.go_home(None)
-        msg = f"{name} is a {what}, SAM 3 score {score:.2f}"
-        return spec, msg + "".join(f"\n    note: {n}" for n in notes)
+        ok, msg = self._perform(act, f"new item {name}")
+        return ok, msg, out.get("spec")
 
-    def go_home(self, held):
+    def forget_item(self, name):
+        """Forget an item added with new_item (exercise/misc.py forget_item)."""
+        misc.forget_item(self, name)
+
+    def go_home(self):
         """Back to the home configuration (the exercise's plan_home), keeping
-        clear of what is in MoveIt's planning scene now."""
+        clear of what the last survey saw and of the items put down since."""
         self.phase("returning home")
+        held = self.held.held if self.held is not None else None
         try:
+            self.set_obstacles(self.scene, exclude=(held.item,) if held else (), placed=self._placed)
             steps = mp.plan_home(self.mv, self.node.current(), self.home, self.width(), self.held_box(held))
-            self.run(steps)
+            self._run(steps)
         except PlanError as e:
             self.log(f"  no path home ({e}); staying here")
 
-    def recover(self, scene):
-        """After a failed grasp: open, rise straight up."""
+    def recover(self):
+        """After a failed action (e.g. a grasp): open, rise straight up."""
         self.phase("recovering: open and rise")
         try:
             w = min(self.width() + 0.03, rg6.MAX_WIDTH)
@@ -793,6 +616,6 @@ class ActionExecutive:
             T = fk(q)
             T[2, 3] += 0.12
             path = self.mv.cartesian_path(q, [T], w, avoid_collisions=False)
-            self.run([mp.trajectory("rise", path, slow=True)])
+            self._run([mp.trajectory("rise", path, slow=True)])
         except Exception as e:  # noqa: BLE001
             self.log(f"  recovery failed: {e}")

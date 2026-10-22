@@ -33,10 +33,10 @@ def main():
 
     from lab_replica.execution.executor import Executor
     from lab_replica.execution.scene_state import ModelPoses
-    from lab_replica.planning.skills import Skills
+    from lab_replica.planning.pick_place import PickPlace
     from lab_replica.transforms import quat_to_matrix, rpy_to_matrix
 
-    sk = Skills(scene, objs, objects.load_basket(scene))
+    sk = PickPlace(scene, objs, objects.load_basket(scene))
     rclpy.init()
     ex = Executor()
     mp = ModelPoses(ex)

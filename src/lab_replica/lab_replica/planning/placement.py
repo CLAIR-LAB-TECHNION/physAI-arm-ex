@@ -1,4 +1,5 @@
-"""Where an item rests: on which support, in which resting pose, at (x, y, yaw)."""
+"""Where an item rests: on which support, in which resting pose, at (x, y,
+yaw); and how the gripper holds an item."""
 
 import math
 from dataclasses import asdict, dataclass
@@ -20,6 +21,21 @@ class Placement:
 
     def as_dict(self):
         return asdict(self)
+
+
+@dataclass
+class Held:
+    """How the gripper holds an item: the item stands in resting pose `rest`
+    (its height `top`), the pads `width` apart, the fingertips `tip_z` above
+    the item's support at the grasp; the grasp centre at `offset_obj` (x, y)
+    in the item's rested frame, the item's yaw minus the gripper's `yaw_rel`."""
+    item: str
+    rest: str
+    width: float          # object width between the pads
+    tip_z: float          # fingertip height above the object's support at grasp
+    offset_obj: tuple     # grasp centre in the rested frame (x, y)
+    yaw_rel: float        # object yaw minus gripper yaw
+    top: float            # object height in this resting pose
 
 
 def placement_pose(item_model, p):

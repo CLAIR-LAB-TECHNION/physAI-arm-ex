@@ -2,7 +2,7 @@
 
 Pure computation (no ROS): gripper poses, inverse kinematics along straight
 lines and arcs of the gripper, and the timing of joint paths. Collision
-checks are in skills.py.
+checks are in pick_place.py.
 
 Conventions:
   * The gripper always points straight down. Its yaw `psi` is the rotation of

@@ -284,9 +284,27 @@ def draw_perception(frame, scene, items, basket, table_z, title, sub=None):
     return vis
 
 
+def draw_masks(frame, masks, title, sub=None):
+    """Masks with their labels (e.g. SAM 3's for a text prompt, with the
+    score): masks = [(label, boolean mask), ...], each in its own colour,
+    the label at its centre."""
+    vis = frame.rgb[:, :, ::-1].copy()
+    for k, (text, m) in enumerate(masks):
+        if m is None or m.shape != vis.shape[:2] or not m.any():
+            continue
+        col = item_color(f"{text}{k}")
+        vis[m] = (0.5 * vis[m] + 0.5 * np.array(col)).astype(np.uint8)
+        cnts, _ = cv2.findContours(m.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(vis, cnts, -1, col, 2)
+        v, u = np.nonzero(m)
+        label(vis, text, (int(u.mean()) + 8, int(v.mean()) - 8), col, scale=vis.shape[1] / 1500.0)
+    banner(vis, title, sub or f"{len(masks)} mask(s)")
+    return vis
+
+
 def gripper_boxes(gx, gy, psi, width):
     """Footprints of the two RG6 pads (finger ends) at `width` apart; the
-    closing direction is psi + 90 deg (planning/skills.py finger_boxes)."""
+    closing direction is psi + 90 deg (planning/pick_place.py finger_boxes)."""
     from ..robot import rg6
     d = np.array([math.cos(psi + math.pi / 2), math.sin(psi + math.pi / 2)])
     t = np.array([-d[1], d[0]])

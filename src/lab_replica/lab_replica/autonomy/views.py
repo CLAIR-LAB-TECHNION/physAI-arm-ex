@@ -15,7 +15,7 @@ import math
 import numpy as np
 
 from ..planning.motion import PlanError, gripper_pose
-from ..planning.skills import TRANSIT_Z, TRANSIT_Z_MAX
+from ..planning.pick_place import TRANSIT_Z, TRANSIT_Z_MAX
 
 VIEW_TRANSIT_Z_MAX = 0.62   # highest transit on the way to a camera view
 from ..robot.kinematics import Chain, robot_urdf
@@ -55,12 +55,12 @@ def hand_eye(ur_type):
 
 class ViewPlanner:
     """Arm configurations and collision-checked motions for camera views.
-    `skills` is a planning.skills.Skills (its planner, collision checks and
+    `pick_place` is a planning.pick_place.PickPlace (its planner, collision checks and
     transit motions are reused)."""
 
-    def __init__(self, skills, ur_type):
-        self.sk = skills
-        self.P = skills.P
+    def __init__(self, pick_place, ur_type):
+        self.sk = pick_place
+        self.P = pick_place.P
         urdf = robot_urdf(ur_type)
         grip = Chain(urdf, "world", "rg6_base_link")
         cam = Chain(urdf, "world", OPTICAL_FRAME)

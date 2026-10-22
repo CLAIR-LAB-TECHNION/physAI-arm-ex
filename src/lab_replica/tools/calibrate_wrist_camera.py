@@ -61,12 +61,12 @@ def capture(out_dir, speed_scale):
     from lab_replica.execution.executor import Executor, active_trajectory_controller
     from lab_replica.perception.rgbd import RGBDCamera
     from lab_replica.planning.motion import PlanError
-    from lab_replica.planning.skills import Skills
+    from lab_replica.planning.pick_place import PickPlace
     from lab_replica.robot import rg6
 
     os.makedirs(out_dir, exist_ok=True)
     cell = config.load_cell()
-    sk = Skills(cell, objects.load_items(), objects.load_basket(cell))
+    sk = PickPlace(cell, objects.load_items(), objects.load_basket(cell))
     vp = ViewPlanner(sk, cell["robot"]["ur_type"])
     width = rg6.width_from_q(-0.3)
 

@@ -1,6 +1,7 @@
 """Everything the exercise (lab_replica/exercise/) uses from the rest of the
-code: data types, small geometric helpers, the robot's kinematics, and the
-steps of a robot plan. Nothing here needs ROS.
+code: data types, small geometric helpers, the robot's kinematics, the steps
+of a robot plan, and the pictures of what the robot decided. Nothing here
+needs ROS. (The skills also get the robot itself: autonomy/executive.py.)
 
 Data types
     Placement     where an item rests: item, rest (resting pose), x, y, yaw, support, z_support
@@ -8,13 +9,18 @@ Data types
     Detection     an item found in a frame: item, score, sam_score, estimate, mask, view, frame
     ImageGrasp    a top-down grasp in an image: pixel (u, v), closing angle, width in pixels
     Grasp         a top-down grasp in the world: pose of rg6_base_link, width, tips_z, top_z
-    Held          how the gripper holds an item (see Held below)
+    Held          how the gripper holds an item: item, rest, width, tip_z, offset_obj, yaw_rel, top
     Box           an oriented box: name, centre c, rotation R, half sizes h
     Cylinder      a vertical cylinder: name, centre c, radius r, half height h
     PlanError     raised when no motion is found
+    ActionError   raised when an action cannot be performed (not applicable, item not found, ...)
 
 Perception helpers (perception/estimate.py)
-    circle_fit, rect_fit, robust_top, top_layer, gauss, fit_mug, fit_spray_bottle, mask_overlap
+    circle_fit, rect_fit, robust_top, top_layer, gauss, fit_mug, fit_spray_bottle, mask_overlap,
+    estimate_item (an item's Estimate from its points), measure_item (a new item's shape and size)
+
+Items
+    make_item(name, spec)   an item model from a spec (objects/measured.py for a measured item)
 
 Robot and geometry
     ARM_JOINTS, ik_all(T), fk(q), joint_limits(), gripper_pose(x, y, z, yaw),
@@ -24,6 +30,19 @@ Robot and geometry
 
 Plans
     trajectory(label, path, ...), gripper_step(label, width, force, ...)
+    spread(spots, n)   up to n of the basket's drop spots (robot.drop_spots), best first, apart
+
+Pictures (in the console's camera window, beside the depth; also on
+/lab_skills/detections and in the run's folder). After every look and every
+segmentation the robot shows by itself what it found (show_detections,
+show_masks); the skills show what they decided:
+    show_detections(robot, frame, scene, title)       the items found: masks, models, names, scores
+    show_masks(robot, frame, masks, title)            masks with labels: [(label, mask), ...]
+    show_image_grasps(robot, frame, item, mask, grasps)          grasps proposed in the image
+    show_grasp(robot, frame, placement, held, open_width)        the planned grasp in the world
+    show_table_spot(robot, frame, scene, region, target, source) where an item is put on the table
+    show_drop(robot, frame, scene, drops, target, z_release)     where an item is dropped in the basket
+    show_new_item(robot, frame, mask, model, placement, label, title, sub)  a measured new item
 """
 
 import functools
@@ -33,23 +52,28 @@ from dataclasses import dataclass
 import numpy as np
 
 from . import config
-from .perception.estimate import (Estimate, circle_fit, fit_mug, fit_spray_bottle, gauss, rect_fit, robust_top,
-                                  top_layer)
+from .perception.estimate import (Estimate, circle_fit, estimate_item, fit_mug, fit_spray_bottle, gauss,
+                                  measure_item, rect_fit, robust_top, top_layer)
 from .planning.geometry2d import polygon_inside_rect, polygons_intersect
 from .planning.motion import PlanError, Planner, gripper_pose
-from .planning.placement import Placement, placement_pose
-from .planning.skills import Held
+from .planning.placement import Held, Placement, placement_pose
 from .robot import rg6
 from .moveit_client import Cylinder
 from .robot.collision import Box, object_box
 from .robot.kinematics import ARM_JOINTS, URKinematics
 from .transforms import rpy_to_matrix, wrap
 
-__all__ = ["ARM_JOINTS", "Box", "Cylinder", "Detection", "Estimate", "Grasp", "Held", "ImageGrasp", "PlanError", "Placement",
-           "box_in_world", "circle_fit", "finger_footprints", "fit_mug", "fit_spray_bottle", "fk", "gauss",
-           "gripper_pose", "gripper_step", "ik_all", "joint_limits", "mask_overlap", "object_box",
-           "placement_pose", "polygon_inside_rect", "polygons_intersect", "rect_fit", "rg6", "robust_top",
-           "rpy_to_matrix", "top_layer", "trajectory", "wrap"]
+__all__ = ["ARM_JOINTS", "ActionError", "Box", "Cylinder", "Detection", "Estimate", "Grasp", "Held", "ImageGrasp",
+           "PlanError", "Placement", "box_in_world", "circle_fit", "estimate_item", "finger_footprints", "fit_mug",
+           "fit_spray_bottle", "fk", "gauss", "gripper_pose", "gripper_step", "ik_all", "joint_limits", "make_item",
+           "mask_overlap", "measure_item", "object_box", "placement_pose", "polygon_inside_rect",
+           "polygons_intersect", "rect_fit", "rg6", "robust_top", "rpy_to_matrix", "show_detections", "show_drop",
+           "show_grasp", "show_image_grasps", "show_masks", "show_new_item", "show_table_spot", "spread",
+           "top_layer", "trajectory", "wrap"]
+
+
+class ActionError(RuntimeError):
+    """An action cannot be performed: not applicable, the item not found, it slipped, ..."""
 
 
 @dataclass
@@ -170,3 +194,88 @@ def gripper_step(label, width, force, expect_grip=False, **extra):
     something (a grasp)."""
     return dict(kind="gripper", label=label, width=float(width), force=float(force), expect_grip=bool(expect_grip),
                 **extra)
+
+
+def spread(spots, n=12, min_dist=0.03):
+    """Up to n drop spots (robot.drop_spots(...).spots: (cost, x, y, yaw,
+    z_pile) best first), best first, at least min_dist apart (when one
+    cannot be reached, its neighbours usually cannot either)."""
+    from .autonomy.drop import spread as _spread
+    return _spread(spots, n, min_dist)
+
+
+# ---- items -------------------------------------------------------------------------------
+
+
+def make_item(name, spec):
+    """The model of item `name` from its spec (a dict as in config/items.yaml;
+    for a measured item: kind "measured", shape "box" or "round", size, ...)."""
+    from . import objects
+    return objects.make_item(name, spec)
+
+
+# ---- pictures ------------------------------------------------------------------------------
+# Each draws on a frame (perception.rgbd.Frame) and shows it with
+# robot.show: in the camera window (the colour image and, drawn the same,
+# the depth), on /lab_skills/detections and in the run's folder.
+
+
+def show_detections(robot, frame, scene, title, sub=None):
+    """The items found in `frame` (their SAM 3 masks, their models where they
+    are estimated, names and scores), the basket's rim and the obstacles."""
+    from .autonomy import annotate
+    robot.show(frame, lambda v: annotate.draw_perception(v, scene, robot.items, robot.basket, robot.table_z,
+                                                         title, sub), title)
+
+
+def show_masks(robot, frame, masks, title, sub=None):
+    """Masks (boolean images) with their labels: masks = [(label, mask), ...]."""
+    from .autonomy import annotate
+    robot.show(frame, lambda v: annotate.draw_masks(v, masks, title, sub), title)
+
+
+def show_image_grasps(robot, frame, item, mask, grasps):
+    """Grasps proposed in the image (ImageGrasp, best first) on `item`'s mask."""
+    from .autonomy import annotate
+    title = f"grasp {item} in the image"
+    robot.show(frame, lambda v: annotate.draw_image_grasp(v, mask, grasps, title), title)
+
+
+def show_grasp(robot, frame, placement, held, open_width):
+    """The planned grasp of the item resting at `placement`: its model, the
+    pads open to open_width on the way down and where they close (held)."""
+    from .autonomy import annotate
+    title = f"grasp {placement.item}"
+    robot.show(frame, lambda v: annotate.draw_grasp(v, robot.items[placement.item], placement, held, open_width,
+                                                    robot.force, title), title)
+
+
+def show_table_spot(robot, frame, scene, region, target, source=None):
+    """Putting an item down on the table: the region it may go to (with its
+    keep-outs), what the spot keeps clear of, the chosen spot `target` (a
+    Placement) and where the item was picked up (`source`, a Placement)."""
+    from .autonomy import annotate
+    item = target.item
+    fp = robot.items[item].footprint_world(target.rest, target.x, target.y, target.yaw)
+    robot.show(frame, lambda v: annotate.draw_table(v, robot.cell, robot.items, robot.basket, scene, region, fp,
+                                                    target, source, item, f"put {item} here (free spot)"),
+               "put on the table")
+
+
+def show_drop(robot, frame, scene, drops, target, z_release):
+    """Dropping an item into the basket: the pile heights seen in it
+    (drops = robot.drop_spots(...)), where the item is released (its bottom
+    at z_release) and where it lands (`target`, a Placement)."""
+    from .autonomy import annotate
+    item = target.item
+    fp = robot.items[item].footprint_world(target.rest, target.x, target.y, target.yaw)
+    robot.show(frame, lambda v: annotate.draw_drop(v, robot.basket, scene.basket_xy, robot.table_z, drops, fp,
+                                                   target, z_release, item, f"drop {item}: emptiest spot"),
+               "drop in the basket")
+
+
+def show_new_item(robot, frame, mask, model, placement, label, title, sub=None):
+    """A new item: its mask and the model made from it at `placement`, with
+    `label` (e.g. its size) beside it."""
+    from .autonomy import annotate
+    robot.show(frame, lambda v: annotate.draw_measure(v, mask, model, placement, label, title, sub), title)
