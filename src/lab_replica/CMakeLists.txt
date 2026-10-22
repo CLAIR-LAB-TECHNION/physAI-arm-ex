@@ -22,6 +22,7 @@ install(PROGRAMS
   scripts/run_solution.py
   scripts/skill_server.py
   scripts/solve.py
+  scripts/workspace_view.py
   DESTINATION lib/${PROJECT_NAME})
 
 ament_environment_hooks("${CMAKE_CURRENT_SOURCE_DIR}/env-hooks/${PROJECT_NAME}.dsv.in")

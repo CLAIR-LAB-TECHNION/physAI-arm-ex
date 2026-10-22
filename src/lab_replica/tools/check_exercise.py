@@ -2,10 +2,11 @@
 """Check the exercise's functions (lab_replica/exercise/) offline: no robot,
 no simulation, no MoveIt. Each check builds a case whose answer is known
 (a synthetic depth image of a block or a can seen from above, a goal with a
-known plan, an arm configuration) and compares.
+known plan, an arm configuration, the board seen from the observation
+configuration) and compares.
 
     python3 src/lab_replica/tools/check_exercise.py              # everything
-    python3 src/lab_replica/tools/check_exercise.py task state   # some parts: task, state, motion
+    python3 src/lab_replica/tools/check_exercise.py task state   # some parts: task, state, observation, motion
 
 (In the clone's top directory, after `source /opt/ros/humble/setup.bash &&
 source install/setup.bash && source .venv/bin/activate`.) The motions
@@ -319,10 +320,37 @@ def check_motion():
     run("sample_spots, is_free", spots)
 
 
+def check_observation():
+    print("observation configuration (exercise/state_estimation.py OBSERVATION_JOINTS)")
+    from lab_replica.exercise import state_estimation as se
+    from lab_replica.problems.generator import SurveyViews
+    from lab_replica.toolkit import ARM_JOINTS, fk, joint_limits
+
+    def joints():
+        q = np.asarray(se.OBSERVATION_JOINTS, float)
+        if q.shape != (6,):
+            check("OBSERVATION_JOINTS: the arm's six joints", False, f"got {se.OBSERVATION_JOINTS!r}")
+            return
+        limits = joint_limits()
+        out = [j for j, v in zip(ARM_JOINTS, q) if not limits[j][0] <= v <= limits[j][1]]
+        check("OBSERVATION_JOINTS: six joints within their limits", not out, ", ".join(out) or "")
+        cell = config.load_cell()
+        bx, by = cell["table"]["board_x"], cell["table"]["board_y"]
+        # The corners 2 cm in: no item stands at the very edge (the current
+        # configuration's image ends just short of one corner).
+        corners = [(x + d, y + e, cell["table"]["surface_z"]) for x, d in zip(bx, (0.02, -0.02))
+                   for y, e in zip(by, (0.02, -0.02))]
+        cam = SurveyViews(cell)
+        seen = [cam.visible([c], margin=0) for c in corners]
+        check("from there the camera sees the whole board (its corners, 2 cm in)", all(seen),
+              f"{sum(seen)}/4 corners in the image; mounting face {fk(q)[2, 3]:.2f} m above the table")
+    run("OBSERVATION_JOINTS", joints)
+
+
 def main():
-    parts = sys.argv[1:] or ["task", "state", "motion"]
+    parts = sys.argv[1:] or ["task", "state", "observation", "motion"]
     for p in parts:
-        {"task": check_task, "state": check_state, "motion": check_motion}[p]()
+        {"task": check_task, "state": check_state, "observation": check_observation, "motion": check_motion}[p]()
     n_fail = RESULTS.count(False)
     print(f"{len(RESULTS) - n_fail}/{len(RESULTS)} checks passed")
     return 1 if n_fail else 0

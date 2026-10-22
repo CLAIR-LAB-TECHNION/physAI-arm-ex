@@ -5,6 +5,7 @@ The executive (autonomy/executive.py) takes RGB-D frames from the wrist
 camera and asks SAM 3 for every item by name. Each answer is a mask (a
 boolean image) with a score. These functions turn them into the scene:
 
+    OBSERVATION_JOINTS   the arm's joints from which the camera sees the whole workspace
     pixels_to_world      depth pixels -> 3D points in the world frame
     estimate_placement   one item's points -> where and how it rests
     assign_masks         the candidate masks of one frame -> at most one per item
@@ -27,6 +28,26 @@ import numpy as np
 
 from ..toolkit import (Estimate, Grasp, ImageGrasp, Placement, circle_fit, fit_mug, fit_spray_bottle,
                        gauss, gripper_pose, mask_overlap, rect_fit, rg6, robust_top, top_layer, wrap)
+
+# ---- where the camera looks from ----------------------------------------------------------
+
+# The observation configuration: the arm's joints [rad] (shoulder_pan,
+# shoulder_lift, elbow, wrist_1, wrist_2, wrist_3) from which the wrist
+# camera sees the whole workspace. Every action starts by looking from here
+# (robot.survey): SAM 3 finds the items and the basket in this one image, so
+# from here the camera must see all of the blue board (0.70 x 0.59 m), with a
+# basket anywhere on it and the items in it, without the gripper or the arm
+# in the way. Seen from too far away, the items get small and SAM 3 misses
+# them; from too close, the board's edges are out of the image. The arm must
+# also be able to stand here holding an item (the put actions look from here
+# too) without touching the table or the wall.
+#
+# Find it on the robot: run/workspace_view.sh real shows the camera live,
+# with SAM 3's masks of the items, and prints the arm's joints as they
+# change. Move the arm by hand (freedrive on the teach pendant) until the
+# camera sees everything, and copy the joints here.
+OBSERVATION_JOINTS = [3.0639, -1.4663, 0.6068, -0.7806, -1.5469, 1.5027]
+
 
 # ---- from pixels to the world -------------------------------------------------------------
 

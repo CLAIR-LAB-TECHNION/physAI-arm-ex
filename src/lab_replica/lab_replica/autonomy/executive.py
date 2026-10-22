@@ -36,6 +36,7 @@ from .. import config, objects
 from ..exercise import misc
 from ..exercise import motion_planning as mp
 from ..exercise import skills
+from ..exercise import state_estimation as se
 from ..exercise.task_planning.planning import DOMAIN_FILE
 from ..moveit_client import MoveIt
 from ..perception.rgbd import RGBDCamera
@@ -137,6 +138,11 @@ class ActionExecutive:
         self.on_observation = None   # f(colour BGR, depth BGR, title) for each annotated view
         self.action = ""
         self.home = np.array(self.cell["robot"]["home_joints"], float)
+        q_obs = np.asarray(se.OBSERVATION_JOINTS, float)
+        if q_obs.shape != (6,):
+            raise ActionError(f"exercise/state_estimation.py: OBSERVATION_JOINTS must be the arm's six joints, "
+                              f"not {se.OBSERVATION_JOINTS!r}")
+        self.survey_views = [{"name": "top", "joints": q_obs, "weight": 1.0}]
         self.actions = domain_actions()
         self.skills = skill_functions(self.actions)
         self._moved = False      # the skill ran steps (robot.run) in this action
@@ -286,37 +292,50 @@ class ActionExecutive:
         frame. The motion keeps clear of what the camera saw last (the last
         scene, without the items in `exclude`), unless that blocks every way:
         it may have changed since."""
+        return self._look(lambda q, box: mp.plan_view(self.mv, q, T_cam, self.T_grip_cam, self.width(), box, label),
+                          held, exclude)
+
+    def look_from(self, q_obs, held, label, exclude=()):
+        """Move the arm to the joints q_obs (the exercise's plan_observation)
+        and take a frame; keeps clear of what was seen like look()."""
+        return self._look(lambda q, box: mp.plan_observation(self.mv, q, q_obs, self.width(), box, label),
+                          held, exclude)
+
+    def _look(self, plan, held, exclude):
         q = self.node.current()
         box = self.held_box(held)
         try:
             self.set_obstacles(self.scene, exclude=exclude)
-            steps = mp.plan_view(self.mv, q, T_cam, self.T_grip_cam, self.width(), box, label)
+            steps = plan(q, box)
         except PlanError as e:
             if not self.obstacles:
                 raise
             self.log(f"  {e}; looking without what was seen before")
             self.set_obstacles(None)
-            steps = mp.plan_view(self.mv, q, T_cam, self.T_grip_cam, self.width(), box, label)
+            steps = plan(q, box)
         self._run(steps)
         return self.capture()
 
     def survey(self, exclude=(), held=None, target=None):
-        """Look from the survey views (and, when `target` is not recognised
-        well enough from them, also from the recognition views); returns the
-        scene (perception.scene.Scene) with .depth (depth_world.DepthWorld)
-        and .obstacles (the unrecognised things in it) set."""
+        """Look from the observation configuration (exercise/state_estimation.py;
+        and, when `target` is not recognised well enough from there, also
+        from the recognition views); returns the scene (perception.scene.Scene)
+        with .depth (depth_world.DepthWorld) and .obstacles (the unrecognised
+        things in it) set."""
         frames, weights = [], []
 
         def take(views):
             for v in views:
                 self.phase(f"observing: {v.get('name', 'view')} view")
-                frames.append(self.look(view_from_config(v), held, f"look ({v.get('name', 'view')})", exclude))
+                label = f"look ({v.get('name', 'view')})"
+                frames.append(self.look_from(v["joints"], held, label, exclude) if "joints" in v
+                              else self.look(view_from_config(v), held, label, exclude))
                 weights.append(float(v.get("weight", 1.0)))
             self.phase("recognising the items (SAM 3)")
             return self.perception.observe(frames, weights, exclude=exclude)
 
         t0 = time.time()
-        scene = take(self.cfg["survey_views"])
+        scene = take(self.survey_views)
         extra = self.cfg.get("recognition_views", [])
         if target is not None and extra:
             d = scene.detections.get(target)
@@ -340,7 +359,7 @@ class ActionExecutive:
                      f"{np.ptp(o.polygon[:, 0]) * 100:.0f} x {np.ptp(o.polygon[:, 1]) * 100:.0f} cm, "
                      f"{o.z_top * 100:.0f} cm high, on the {o.support}")
         # Every view, annotated (a put then also shows its plan).
-        views = self.cfg["survey_views"] + extra
+        views = self.survey_views + extra
         for k, f in enumerate(frames):
             self.publish_detections(f, scene, f"{views[k].get('name', 'survey')} view: SAM 3 + depth")
         self.save_scene(scene, "survey")
@@ -480,7 +499,7 @@ class ActionExecutive:
 
     def best_frame(self, scene):
         """The scene's frame of the highest-weight view (the top view)."""
-        views = self.cfg["survey_views"] + self.cfg.get("recognition_views", [])
+        views = self.survey_views + self.cfg.get("recognition_views", [])
         k = int(np.argmax([float(v.get("weight", 1.0)) for v in views[:len(scene.frames)]]))
         return scene.frames[k]
 

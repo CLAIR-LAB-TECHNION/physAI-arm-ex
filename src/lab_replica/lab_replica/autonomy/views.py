@@ -45,6 +45,11 @@ def down_view(x, y, height, up=(0.0, -1.0, 0.0)):
     return look_at((x, y, height), (x, y, 0.0), up)
 
 
+def camera_pose(q, ur_type):
+    """World pose of the camera's optical frame at the arm joints q."""
+    return Chain(robot_urdf(ur_type), "world", OPTICAL_FRAME).fk(np.asarray(q, float))
+
+
 def hand_eye(ur_type):
     """The camera's optical frame in the frame of rg6_base_link (4x4), from
     the robot description (cell.yaml wrist_camera)."""

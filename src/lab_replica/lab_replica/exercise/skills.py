@@ -31,8 +31,8 @@ The robot (autonomy/executive.py):
     robot.current()                 the arm's joints now
     robot.wait(seconds)             let the robot's state come in for a while
     robot.survey(exclude=(), held=None, target=None)
-                                    look from the survey views (and from the side when `target` is
-                                    not recognised from above): a Scene with .detections {item:
+                                    look from the observation configuration (state_estimation.py;
+                                    and from the side when `target` is not recognised from above): a Scene with .detections {item:
                                     Detection}, .basket_xy, .frames, .depth, .obstacles
     robot.close_look(scene, item, held=None)
                                     look at `item` from closer and update `scene`: the frame, or None
@@ -72,9 +72,10 @@ DROP_CLEARANCE = 0.02    # dropping into the basket: the item's bottom this far 
 
 
 def pick_up(robot, item):
-    """(pick-up item): look (survey view; also from the side if `item` is
-    not recognised from above), find `item`, look at it from closer, propose
-    grasps in the image, plan a collision-free top-down grasp, grasp, lift.
+    """(pick-up item): look (from the observation configuration; also from
+    the side if `item` is not recognised from above), find `item`, look at
+    it from closer, propose grasps in the image, plan a collision-free
+    top-down grasp, grasp, lift.
     Applicable when the gripper is empty."""
     if robot.holding():
         raise ActionError(f"not applicable: the gripper is holding "

@@ -5,11 +5,14 @@ skills for the UR5e + RG6 + wrist RealSense cell. Nothing in here touches ROS.
     task_planning/problem.pddl  the PDDL problem (the objects and a goal; the goal console puts in
                                 the current state and the goal typed)
     task_planning/planning.py   UPF + Fast Downward, the expected states, executing a plan
-    state_estimation.py         pixels -> world points, where each item rests, which mask is which
-                                item, a grasp proposed in the image and its 3D pose
+    state_estimation.py         the observation configuration (the arm's joints from which the
+                                camera sees the whole workspace), pixels -> world points, where
+                                each item rests, which mask is which item, a grasp proposed in the
+                                image and its 3D pose
     motion_planning.py          inverse kinematics choice, the held item's box, the motions of the
-                                camera views and of pick-up / put-on-table / put-in-basket with
-                                MoveIt, where to put an item down, the obstacles MoveIt avoids
+                                camera views, to the observation configuration and of pick-up /
+                                put-on-table / put-in-basket with MoveIt, where to put an item
+                                down, the obstacles MoveIt avoids
     skills.py                   the PDDL actions performed by the robot: (pick-up X) by
                                 pick_up(robot, X), put_on_table, put_in_basket
     misc.py                     bonus: new-item: / forget-item: (an item measured by the camera)
@@ -26,4 +29,6 @@ Who calls what:
     perception/rgbd.py, perception/scene.py   -> state_estimation.py (points, placements, masks)
     autonomy/executive.py                     -> skills.py, misc.py (with itself as the robot)
     skills.py, misc.py                        -> state_estimation.py (grasps), motion_planning.py
+    autonomy/executive.py (robot.survey)      -> state_estimation.py (OBSERVATION_JOINTS),
+                                                 motion_planning.py (plan_observation)
 """

@@ -59,6 +59,7 @@ argument always says where to run: **`sim`** (the Gazebo simulation) or
 | 2 | `run/2_camera.sh sim` or `real` | the wrist camera | sim: `Creating GZ->ROS Bridge`, real: `RealSense Node Is Up!` |
 | 3 | `run/3_actions.sh sim` or `real` | the **action console**: you type one action at a time | `Ready.` and the prompt `action>` |
 | 3 (instead) | `run/4_goals.sh sim` or `real` | the **goal console**: you type a goal | `Ready.` and the prompt `goal>` |
+| 3 (instead) | `run/workspace_view.sh sim` or `real` | the **workspace view**: the camera with SAM 3's masks, and the arm's joints as they change, to find the [observation configuration](#the-observation-configuration) (it never moves the arm) | `OBSERVATION_JOINTS = [...]`, updating |
 
 * Run **either** the action console **or** the goal console, not both: each
   one drives the robot. To switch, quit one (Ctrl-D) and start the other;
@@ -92,7 +93,8 @@ linked, so editing them needs no new build).
 | | `solve` | the plan: UPF's `OneshotPlanner(name="fast-downward")` | |
 | | `expected_states`, `facts_of` | the state after each action (UPF's `SequentialSimulator`) | |
 | | `execute_plan` | the robot performs the actions one by one, stopping at the first failure | the goal console |
-| `state_estimation.py` | `pixels_to_world` | depth pixels to 3D points in the world frame (pinhole camera) | every look |
+| `state_estimation.py` | `OBSERVATION_JOINTS` | the [observation configuration](#the-observation-configuration): the arm's joints from which the wrist camera sees the whole workspace | every action (`robot.survey`) |
+| | `pixels_to_world` | depth pixels to 3D points in the world frame (pinhole camera) | every look |
 | | `estimate_placement` | an item's 3D points to where and how it rests (support, resting pose, x, y, yaw) | every look |
 | | `assign_masks` | SAM 3's masks in one image to at most one per item | every look |
 | | `fuse_views` | the items found in several images to one estimate per item | every look |
@@ -102,6 +104,7 @@ linked, so editing them needs no new build).
 | | `camera_to_gripper`, `held_box` | frames: the gripper pose for a camera pose; the held item's box in the gripper's frame | |
 | | `joint_line`, `straight_path`, `plan_path` | the straight line in joint space when nothing is in its way; else straight up first, then the line; else MoveIt's planner | every motion |
 | | `move_to_pose`, `plan_view`, `plan_home` | collision-free motions to a gripper pose, a camera view, home | every look, the way home |
+| | `plan_observation` | the collision-free motion to the observation configuration | every action (`robot.survey`) |
 | | `plan_pick` | above the grasp, open, straight down, close, straight up | `(pick-up X)` |
 | | `plan_place` | carry, straight down, open, straight up | `(put-on-table X)`, `(put-in-basket X)` |
 | | `sample_spots`, `is_free`, `find_table_spot` | where on the table an item can be put | `(put-on-table X)` |
@@ -151,11 +154,47 @@ goals with known plans, arm configurations):
 
 ```console
 source /opt/ros/humble/setup.bash && source install/setup.bash && source .venv/bin/activate
-python3 src/lab_replica/tools/check_exercise.py            # or: ... check_exercise.py task state motion
+python3 src/lab_replica/tools/check_exercise.py            # or: ... check_exercise.py task state observation motion
 ```
 
 The motions themselves need MoveIt: try them in simulation
 ([Run it in simulation](#run-it-in-simulation)).
+
+### The observation configuration
+
+Every action starts by looking at the whole workspace from one arm
+configuration, `OBSERVATION_JOINTS` in `exercise/state_estimation.py` (the
+six joint angles in radians, from `shoulder_pan` to `wrist_3`). SAM 3 finds the
+items and the basket in that one image, so from there the camera must see
+the whole blue board, with the basket anywhere on it, close enough for SAM 3
+to recognise every item, and the arm must stand there (also holding an item)
+without touching the table or the wall.
+
+To find it, with the robot and the camera running (terminals 1 and 2):
+
+```console
+run/workspace_view.sh real
+```
+
+A window shows the camera live (colour and depth) and below it the same
+images with SAM 3's masks of the items and the basket, as often as SAM 3
+keeps up (about once a second), with the items it does not find listed at
+the bottom. The terminal shows the arm's joints, updating as the arm moves,
+as a line to copy, and where the camera is. Move the arm by hand (freedrive
+on the teach pendant) until every item and the basket are found, wherever
+they stand on the board, then copy the `OBSERVATION_JOINTS = [...]` line
+into `exercise/state_estimation.py`. `s` in the window prints the joints on a line
+of their own (to compare a few candidates); `q` quits and prints them once
+more. `--min-score` sets the SAM 3 score from which masks are shown
+(default 0.3). The workspace view only reads the joints: it never moves the
+arm. In simulation (`run/workspace_view.sh sim`) the arm cannot be moved by
+hand.
+
+`check_exercise.py observation` checks offline that the configuration is
+within the joint limits and that the camera sees the board's corners from
+there; the next action in a console moves there (the motion is MoveIt's,
+`plan_observation`; a configuration where the arm would touch something is
+refused, naming what it touches).
 
 **MoveIt** runs as `move_group`, started by the console (or the skill
 server) when none is running, with the robot model of
@@ -1143,9 +1182,9 @@ instead of `sim.launch.py` and `skill_server.py` without `--sim` (start with
    values there are the design of the simulated bracket). Check it with
    `--save-frames` and `tools/depth_map.py`: the table must come out at z = 0
    (white in the depth map) and the items where they are.
-3. **Check the survey views** with the real lens: each view must see the
-   whole placement region (the server's annotated views show what it saw). A
-   D455 (90 deg) sees more; a narrower lens may need a third view.
+3. **Check the observation configuration** with the real lens
+   (`run/workspace_view.sh real`, [The observation configuration](#the-observation-configuration)):
+   the camera must see the whole board from there.
 4. Measure the items (items.yaml) and the table height: the pose fitting uses
    the item dimensions, the planner the table.
 
@@ -1223,7 +1262,7 @@ geometry; `videos/previous/`: the version before that. Recorded with
 * A tall item dropped onto a pile topples and may end up leaning over the
   rim; what the camera sees of it (columns from the table up) can then block
   the arm for later picks near the basket.
-* **The survey view only just covers the table.** From its height of 0.70 m
+* **The observation view only just covers the table.** From its height of 0.70 m
   it sees the table from y = -0.25 to 0.29 m and up to x = 0.86 m, and less
   higher up; the placement region is y = -0.24 to 0.27 m. Space outside
   every view counts as occupied for the motions, so an item at the edge of
@@ -1394,7 +1433,8 @@ and run it again.
 
 ```
 physAI-arm-ex/
-  run/                     THE FOUR SCRIPTS: 1_robot.sh, 2_camera.sh, 3_actions.sh, 4_goals.sh (env.sh: shared set-up)
+  run/                     THE FOUR SCRIPTS: 1_robot.sh, 2_camera.sh, 3_actions.sh, 4_goals.sh (env.sh: shared set-up);
+                           0_setup.sh; workspace_view.sh (find the observation configuration)
   docs/                    pictures for this README
   problems/
     all_on_table/          the default simulated scene of run/1_robot.sh sim: all twelve items on the table
@@ -1413,7 +1453,7 @@ physAI-arm-ex/
     config/
       cell.yaml            MEASUREMENTS of the cell: table, robot mount, gripper, wrist camera, basket, camera, wall
       items.yaml           MEASUREMENTS of the twelve items
-      perception.yaml      wrist camera topics, survey views, SAM 3 prompts and thresholds
+      perception.yaml      wrist camera topics, recognition views, SAM 3 prompts and thresholds
       real_robot.yaml      robot IP and driver settings
       controllers.yaml     ros2_control controllers of the simulation
       domain.pddl          the lab's PDDL domain (the planner uses exercise/task_planning/domain.pddl)
@@ -1454,6 +1494,7 @@ physAI-arm-ex/
 |---|---|
 | `action_console.py [--sim]` | the action console (normally started by `run/3_actions.sh`) |
 | `goal_console.py [--sim]` | the goal console (normally started by `run/4_goals.sh`) |
+| `workspace_view.py [--sim]` | the workspace view: camera + SAM 3 masks, the arm's joints (normally started by `run/workspace_view.sh`) |
 | `skill_server.py [--sim]` | the skills as a ROS 2 action, `/lab_skills/execute` (section A.2) |
 | `do_action.py "<action>" ...` | sends actions to the skill server |
 | `run_solution.py <problem>` | runs the problem's hard-coded `solution.py` (simulation or real robot) |

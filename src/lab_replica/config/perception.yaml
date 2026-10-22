@@ -9,22 +9,20 @@ topics:
   depth: /camera/camera/aligned_depth_to_color/image_raw
   info: /camera/camera/color/camera_info
 
-# Where the camera looks from before every action. Each view: the camera at
-# `eye` looking at `target`, `up` the world direction that is up in the image.
-# The top view sees the whole blue board (0.70 x 0.59 m) and a basket anywhere
-# on it (checked on the real robot, 2026-10-18). Straight down the camera only
-# reaches 0.75 m there, too low to fit the board's 0.59 m in the image's short
-# side: hence 0.78 m and a 4 deg tilt towards +x. Problem generation keeps
-# items and the basket inside these views (problems/generator.py SurveyViews).
-survey_views:
-  - {name: top, eye: [0.46, 0.0, 0.78], target: [0.5145, 0.0, 0.0], up: [0.0, -1.0, 0.0], weight: 1.0}
+# Where the camera looks from before every action: the arm's joints
+# OBSERVATION_JOINTS in lab_replica/exercise/state_estimation.py, from which
+# the camera sees the whole blue board (0.70 x 0.59 m) and a basket anywhere
+# on it. Problem generation keeps items and the basket inside that view
+# (problems/generator.py SurveyViews).
 
 # Views of the same region from other angles, taken before a pick-up only
-# when the survey did not recognise the item to pick (SAM 3 score x
+# when the observation view did not recognise the item to pick (SAM 3 score x
 # plausibility below recognition_min_score). From straight above some items
 # are hard to name (the spray bottle is a grey head on a red blob); from the
 # front at an angle SAM 3 recognises them. Per item, the detection with the
-# highest score x `weight` is used; the geometry still comes from the top view.
+# highest score x `weight` is used; the geometry still comes from the
+# observation view. Each view: the camera at `eye` looking at `target`, `up`
+# the world direction that is up in the image.
 recognition_views:
   - {name: front, eye: [0.40, -0.25, 0.70], target: [0.40, 0.03, 0.0], up: [0.0, 0.0, 1.0], weight: 0.7}
 recognition_min_score: 0.5

@@ -40,22 +40,19 @@ SETTLE_TIME = 2.0        # s of simulated time
 
 
 class SurveyViews:
-    """Pinhole model of the wrist camera at the survey views of
-    config/perception.yaml: what the real robot sees before every action."""
+    """Pinhole model of the wrist camera at the observation configuration
+    (exercise/state_estimation.py OBSERVATION_JOINTS): what the real robot sees before every action."""
 
     def __init__(self, cell):
-        import yaml
-
-        from ..autonomy.views import view_from_config
-        with open(config.path("config", "perception.yaml")) as f:
-            views = yaml.safe_load(f)["survey_views"]
+        from ..autonomy.views import camera_pose
+        from ..exercise.state_estimation import OBSERVATION_JOINTS
         wc = cell["wrist_camera"]
         self.W, self.H = wc["width"], wc["height"]
         self.f = (self.W / 2) / math.tan(wc["horizontal_fov"] / 2)
-        self.T_cam_world = [inv_tf(view_from_config(v)) for v in views]
+        self.T_cam_world = [inv_tf(camera_pose(OBSERVATION_JOINTS, cell["robot"]["ur_type"]))]
 
     def visible(self, p, margin=10):
-        """True if all points are inside the image of one of the survey views."""
+        """True if all points are inside the camera's image there."""
         p = np.atleast_2d(p)
         for T in self.T_cam_world:
             c = p @ T[:3, :3].T + T[:3, 3]
