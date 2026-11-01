@@ -26,6 +26,16 @@ So the planner keeps clear of what the depth camera actually measured:
     the depth, and so is the unseen space just outside the basket that is
     lower than its rim (its shadow); the basket is the one modelled obstacle
     (with the table).
+  * Unseen cells that only the robot hid from the camera (the ray to the
+    cell ends on the arm, and in no frame on anything else) are not
+    obstacles either: that is space the robot itself stands in or next to
+    (the shoulder, beside the base), and MoveIt keeps the robot clear of
+    itself with its URDF. Bounded like the other unseen cells, such a cell
+    would enclose the shoulder, which stays there whatever the arm does
+    (it turns only with the base joint), and every configuration would
+    collide with it. Assumed for now (2026-11-01): no item stands hidden
+    behind the robot. Views that see past the arm (active perception)
+    would lift that assumption.
 
 The cells are also labelled with the item they belong to: the pixels of the
 item's SAM 3 mask, grown by a centimetre, plus the seen occupied cells
@@ -47,7 +57,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-from .obstacles import Obstacle, remove_robot
+from .obstacles import Obstacle, near_robot, remove_robot
 
 CELL = 0.0025           # [m]
 MIN_HEIGHT = 0.010      # a cell is occupied this much above its support (depth noise below)
@@ -61,6 +71,7 @@ ITEM_SHADOW = 0.015     # ... plus unseen cells within this of it, no higher tha
 HELD_ENVELOPE = 0.010   # the held item's box grown by this was empty but for the item
 BASKET_SHADOW = 0.05    # unseen space this far outside the rim, below it, is the basket's shadow
 NEAR_BASE = 0.35        # near the base, points higher than the tallest item belong to the robot
+ROBOT_NEAR = 0.03       # a depth point this close to the robot's surface is the robot (remove_robot)
 FLOOR = -1e3            # "nothing here" in the maps (instead of -inf, which cv2.dilate mishandles)
 
 
@@ -111,6 +122,9 @@ class DepthWorld:
         H = np.where(seen & (top > self.support + MIN_HEIGHT), top, FLOOR)
         self.unseen = ~seen & ~self.keepout & ~self.wall
         H = self._fill_unseen(H, X, Y)
+        # Hidden from the camera by the robot alone: not an obstacle (the module doc).
+        self.robot_hidden = self._hidden_by_robot(X, Y)
+        self.carved &= ~self.robot_hidden
         if held_box is not None:
             H = self._below_held(H, held_box)
         if prior is not None and prior.H.shape == H.shape:
@@ -125,7 +139,7 @@ class DepthWorld:
             shadow = self.carved & (r <= b.r_top + BASKET_SHADOW) & (H <= self.table_z + b.height + 0.01)
             self.wall |= shadow
             self.carved &= ~shadow
-        H[self.keepout | self.wall] = FLOOR
+        H[self.keepout | self.wall | self.robot_hidden] = FLOOR
         self.H = H.astype(np.float32)
         self.occupied = self.H > FLOOR / 2
         self.blind = self.carved & (self.H >= self.z_max)     # no ray reached it
@@ -274,6 +288,39 @@ class DepthWorld:
         H[iy, ix] = np.where(any_free & (lowest == 0), FLOOR, bound)
         self.carved[iy, ix] = ~(any_free & (lowest == 0))
         return H
+
+    def _hidden_by_robot(self, X, Y):
+        """The unseen (carved) cells that only the robot hid: in some frame
+        the ray to the cell's floor ends, in front of it, on the robot (a
+        depth point within ROBOT_NEAR of its surface at that frame's joints),
+        and in no frame on anything else."""
+        robot = np.zeros(self.carved.shape, bool)
+        other = np.zeros(self.carved.shape, bool)
+        iy, ix = np.nonzero(self.carved)
+        if len(ix) == 0:
+            return robot
+        P = np.c_[X[iy, ix], Y[iy, ix], self.support[iy, ix]]
+        for f in self.frames:
+            uv, d = f.project(P)
+            h, w = f.depth.shape
+            u, v = np.round(uv[:, 0]).astype(int), np.round(uv[:, 1]).astype(int)
+            ok = (d > 0.05) & (u >= 0) & (u < w) & (v >= 0) & (v < h)
+            meas = np.full(len(P), np.nan)
+            meas[ok] = f.depth[v[ok], u[ok]]
+            with np.errstate(invalid="ignore"):
+                front = np.nonzero(meas < d - FREE_EPS)[0]
+            if len(front) == 0:
+                continue
+            if f.q is None:
+                other[iy[front], ix[front]] = True
+                continue
+            # The measured point on the same ray (depth is along the view).
+            cam = f.T_world_cam[:3, 3]
+            Q = cam + (P[front] - cam) * (meas[front] / d[front])[:, None]
+            on_robot = near_robot(Q, f.q, self.cell, dist=ROBOT_NEAR)
+            robot[iy[front[on_robot]], ix[front[on_robot]]] = True
+            other[iy[front[~on_robot]], ix[front[~on_robot]]] = True
+        return robot & ~other
 
     def _below_held(self, H, held_box):
         """The held item was where its box is when each frame was taken, so
@@ -437,7 +484,7 @@ class DepthWorld:
         img[self.occupied] = np.stack([g, g, g], -1)[self.occupied]
         unseen = self.occupied & self.carved
         img[unseen] = np.stack([200 - 120 * h, 60 + 0 * h, 170 - 60 * h], -1)[unseen].astype(np.uint8)
-        img[self.keepout | self.wall] = (190, 230, 190)
+        img[self.keepout | self.wall | self.robot_hidden] = (190, 230, 190)
         img = cv2.resize(img[::-1], (nx * scale, ny * scale), interpolation=cv2.INTER_NEAREST)
         rng = np.random.default_rng(7)
         for it, r in sorted(self.regions.items()):

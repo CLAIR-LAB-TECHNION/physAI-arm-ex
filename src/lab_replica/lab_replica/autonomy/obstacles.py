@@ -83,14 +83,19 @@ class RobotSurface:
         return np.vstack([P @ T[k][:3, :3].T + T[k][:3, 3] for k, P in self.points.items() if k in T])
 
 
-def remove_robot(P, q, cell, width=0.08, dist=0.03):
-    """Points farther than `dist` from the robot at joints q."""
+def near_robot(P, q, cell, width=0.08, dist=0.03):
+    """Which points (N, 3) are within `dist` of the robot at joints q."""
     from scipy.spatial import cKDTree
     if "surface" not in _ROBOT:
         _ROBOT["surface"] = RobotSurface(cell)
     R = _ROBOT["surface"].world_points(q, width)
     d, _ = cKDTree(R).query(P, distance_upper_bound=dist)
-    return P[~np.isfinite(d)]
+    return np.isfinite(d)
+
+
+def remove_robot(P, q, cell, width=0.08, dist=0.03):
+    """Points farther than `dist` from the robot at joints q."""
+    return P[~near_robot(P, q, cell, width, dist)]
 
 
 def height_map(frames, cell, x_range=None, y_range=None, robot_radius=0.17, stride=3):
