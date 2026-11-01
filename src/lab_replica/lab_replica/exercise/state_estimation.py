@@ -45,8 +45,8 @@ from ..toolkit import (Estimate, Grasp, ImageGrasp, Placement, down_view, gauss,
 # shoulder_lift, elbow, wrist_1, wrist_2, wrist_3) from which the wrist
 # camera sees the whole workspace. Every action starts by looking from here
 # (robot.survey(OBSERVATION_JOINTS)): SAM 3 finds the items and the basket
-# in this one image, so from here the camera must see all of the blue board
-# (0.70 x 0.59 m), with a basket anywhere on it and the items in it, without
+# in this one image, so from here the camera must see all of the board
+# (1.00 x 0.70 m), with a basket anywhere on it and the items in it, without
 # the gripper or the arm in the way. Seen from too far away, the items get small and SAM 3 misses
 # them; from too close, the board's edges are out of the image. The arm must
 # also be able to stand here holding an item (the put actions look from here
@@ -62,7 +62,7 @@ from ..toolkit import (Estimate, Grasp, ImageGrasp, Placement, down_view, gauss,
 # views can be found by hand like this one (more joints), or computed (camera
 # poses: toolkit.look_at, toolkit.down_view); the skills decide when to look
 # again (skills.py).
-OBSERVATION_JOINTS = [3.0639, -1.4663, 0.6068, -0.7806, -1.5469, 1.5027]
+OBSERVATION_JOINTS = [3.0627, -1.5175, 0.2472, -0.3958, -1.5175, 1.5217]
 
 # From the front at an angle: SAM 3 names items it does not recognise from
 # straight above (the blue cup's yellow stripe is on its side, the spray

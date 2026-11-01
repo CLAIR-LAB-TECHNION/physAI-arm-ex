@@ -42,7 +42,7 @@ def build_models(out=None, log=print):
     _write_dynamic(out, "basket", basket.shapes, basket.mass, basket.com, basket.inertia, basket.visual,
                    "Woven seagrass basket", mu=BASKET_FRICTION)
     log(f"built basket: {len(basket.shapes)} collision shapes")
-    _write_model(out, "lab_table", table_sdf(cell), "Lab table with white and blue boards")
+    _write_model(out, "lab_table", table_sdf(cell), "Lab table with its white board")
     _write_model(out, "lab_room", room_sdf(cell), "Wall, window sill and floor behind the table")
     log("built lab_table, lab_room")
     worlds = config.path("worlds")

@@ -59,6 +59,7 @@ def capture(out_dir, speed_scale):
     from lab_replica import objects
     from lab_replica.autonomy.views import ViewPlanner, look_at
     from lab_replica.execution.executor import Executor, active_trajectory_controller
+    from lab_replica.moveit_client import MoveIt
     from lab_replica.perception.rgbd import RGBDCamera
     from lab_replica.planning.motion import PlanError
     from lab_replica.planning.pick_place import PickPlace
@@ -80,12 +81,20 @@ def capture(out_dir, speed_scale):
     if not node.traj.wait_for_server(timeout_sec=30.0):
         raise SystemExit(f"no {controller} action server")
     cam = RGBDCamera(node, cell["robot"]["ur_type"])
+    # MoveIt checks every state of every motion for collisions of the robot
+    # with itself (check_path does not: on 2026-11-01 a wrist swing between
+    # two views put a finger against the upper arm), the table and the wall.
+    mv = MoveIt(node, cell)
+    mv.start()
 
     def check(path):
         for q in path:
             if sk.robot.world_points(q, width)[1][:, 2].min() < MIN_TIP_Z:
                 raise PlanError("fingertips too low")
         sk.check_path(path, width, {}, label="calibration view")
+        for q in path:
+            if not mv.is_valid(q, width):
+                raise PlanError(f"the robot would touch {', '.join(mv.contacts(q, width))}")
 
     q_ref = None
     for k, (eye, target, up) in enumerate(VIEWS):
@@ -103,6 +112,9 @@ def capture(out_dir, speed_scale):
             # Rise first: camera straight up to 0.75 m, then over.
             T = vp.camera_pose(q0)
             q_up = vp.ik_view(look_at((T[0, 3], T[1, 3], 0.75), (T[0, 3], T[1, 3], 0.0), up), q0)
+            if q_up is None:
+                print(f"view {k}: no safe motion (cannot rise first), skipped")
+                continue
             path = sk.P.joint_move(q0, q_up, step=0.02) + sk.P.joint_move(q_up, q1, step=0.02)[1:]
             try:
                 check(path)
@@ -119,6 +131,7 @@ def capture(out_dir, speed_scale):
         with open(os.path.join(out_dir, f"{k:02d}.json"), "w") as fh:
             json.dump({"q": [float(v) for v in q], "K": f.K.tolist()}, fh)
         print(f"view {k}: saved")
+    mv.stop()
     node.destroy_node()
     rclpy.shutdown()
 

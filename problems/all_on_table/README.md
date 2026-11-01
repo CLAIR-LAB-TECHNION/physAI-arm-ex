@@ -1,10 +1,12 @@
 # all_on_table
 
 The default scene of the simulation started by `run/sim.sh`: all
-twelve items on the blue board, the basket empty, the gripper empty, which is
+twelve items on the board, the basket empty, the gripper empty, which is
 what the goal console (`run/goals.sh`) assumes at its start. Generated
 with seed 1 for the cell of 2026-10-18 (slatted table, 0.70 x 0.59 m board;
-stable layout settled in Gazebo, every item graspable):
+stable layout settled in Gazebo, every item graspable); replanned for the
+1.00 x 0.70 m, 10 mm white board of 2026-11-01 (`replan_problem.py`, which
+also rewrites this file: restore the text above after running it):
 
     ros2 run lab_replica generate_problem.py --seed 1 --name all_on_table --basket-items 0 --p-holding 0 --max-actions 4
 

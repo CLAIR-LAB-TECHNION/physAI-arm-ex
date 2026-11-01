@@ -33,9 +33,9 @@ def draw_layout(path, cell, items, prob, title="", px_per_m=900):
     d = ImageDraw.Draw(img)
     f, fb, fs = _font(15), _font(18, True), _font(12)
     d.text((margin, 12), f"{title}  -  top view, world frame (cm)", font=fb, fill=(0, 0, 0))
-    # Table top and the blue board.
+    # Table top and the white board.
     d.rectangle([P(t["x_min"], t["y_max"]), P(t["x_max"], t["y_min"])], fill=(225, 227, 230), outline=(120, 120, 120))
-    d.rectangle([P(t["board_x"][0], t["board_y"][1]), P(t["board_x"][1], t["board_y"][0])], fill=(170, 210, 240),
+    d.rectangle([P(t["board_x"][0], t["board_y"][1]), P(t["board_x"][1], t["board_y"][0])], fill=(252, 252, 250),
                 outline=(120, 120, 120))
     # Grid every 10 cm.
     for gx in np.arange(math.ceil(x0 * 10) / 10, x1, 0.1):

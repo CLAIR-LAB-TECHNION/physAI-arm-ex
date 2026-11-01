@@ -13,25 +13,29 @@
 # the blue board), y away from the front towards the wall, z up. Measure every
 # position from the robot base axis.
 #
-# CURRENT SETUP (2026-10-18): slatted aluminium table, 1.26 m x 0.85 m, with
-# the robot near its back-left corner and a blue 0.70 m x 0.59 m board to its
-# right; the basket may stand anywhere on the board. Measured with the wrist
-# camera on the real robot (board, table end and back edge, basket, hand-eye
-# transform) plus the user's tape measurements (table, board, basket). The
-# rest (table height, uprights, sockets) is estimated from a photo.
+# CURRENT SETUP (2026-10-18; board replaced 2026-11-01): slatted aluminium
+# table, 1.26 m x 0.85 m, with the robot near its back-left corner, and a white
+# 1.00 m x 0.70 m x 10 mm board on it, from just behind the robot base axis to
+# near the table's right end; the basket may stand anywhere on the board.
+# Measured with the wrist camera on the real robot (board, table end and back
+# edge, basket, hand-eye transform) plus the user's tape measurements (table,
+# board, basket). The rest (table height, uprights, sockets) is estimated from
+# a photo.
 
 table:
-  surface_z: 0.0            # top of the blue board (defines z = 0)
+  surface_z: 0.0            # top of the board (defines z = 0)
   height: 0.75              # floor to table top (estimated)
-  board_thickness: 0.004    # the blue board on the slats
+  board_thickness: 0.010    # the white board on the slats (measured; the blue one before 2026-11-01: 0.004)
   # Top of the slatted aluminium table (1.26 m x 0.85 m), from the robot base axis.
   x_min: -0.29              # left edge (x_max - 1.26)
   x_max: 0.97               # right edge (seen by the wrist camera)
   y_min: -0.41              # front edge (y_max - 0.85)
   y_max: 0.44               # back edge, at the wall (seen by the wrist camera)
-  # The blue board (0.70 m x 0.59 m): the workspace. Items and the basket stand on it.
-  board_x: [0.083, 0.783]
-  board_y: [-0.29, 0.30]
+  # The white board (1.00 m x 0.70 m), its edges seen by the wrist camera
+  # (2026-11-01). Items and the basket stand on it, inside placement's
+  # x_range and y_range (the workspace the survey view must see).
+  board_x: [-0.075, 0.93]
+  board_y: [-0.335, 0.37]
   slat_pitch: 0.05          # aluminium slats of the table top (visual)
   frame_profile: 0.045      # aluminium extrusion of the table frame (visual)
 
@@ -43,7 +47,7 @@ robot:
   # Position of the robot's mounting face (base_link) in the world frame.
   # base_xyz[2] is its height above the table top: MEASURE IT, the fingertips
   # go down to 8 mm above the table.
-  base_xyz: [0.0, 0.0, 0.015]   # z from the wrist-camera calibration (board seen 3 mm below 0.012)
+  base_xyz: [0.0, 0.0, 0.009]   # z: 0.015 above the 4 mm blue board (wrist-camera calibration), so 0.009 above the 10 mm white board
   # Rotation of the robot base about the vertical axis. 0: base_link x points
   # along world x. (UR's own "base" frame on the pendant is base_link turned
   # by 180 deg about z.) Measured: base_link x points away from the board, so
@@ -81,8 +85,8 @@ basket:
   # stays min_base_distance from the robot base axis (the UR's upper arm,
   # 13 cm above the table, reaches 0.20 m out from the axis) and inside the
   # table top.
-  random_x: [0.083, 0.783]
-  random_y: [-0.29, 0.30]
+  random_x: [-0.075, 0.93]    # the board
+  random_y: [-0.335, 0.37]
   min_base_distance: 0.215
 
 wrist_camera:
@@ -97,6 +101,11 @@ wrist_camera:
   # 0.4 deg, the offset along the view axis to about 4 mm): the camera looks
   # along the gripper axis (1.1 deg off), its lens 112 mm off the axis,
   # level with the gripper's mounting face.
+  # Checked on 2026-11-01 with a printed ArUco grid on the board, from 27
+  # views (0.38-0.72 m, tilted up to 35 deg): the depth puts the sheet at
+  # +1 mm, sd 1.5 mm, all views within -3..+5 mm. A pose fitted to the
+  # markers was no better with UR's nominal kinematics (only with the robot's
+  # factory kinematics, sd 1.1 mm). The depth reads about 3 mm long.
   optical_xyz: [-0.1038, 0.0431, 0.0125]
   optical_rpy: [0.0184, 0.0012, -1.5802]
   housing: [0.025, 0.090, 0.025]   # camera body (depth along the view, width, height) [m]
@@ -135,9 +144,10 @@ room:
 # solutions when they put an item down (put-on-table). Points must also be
 # reachable (checked with inverse kinematics) and visible to the camera.
 placement:
-  # Items stand on the blue board (their footprints inside these ranges).
-  x_range: [0.093, 0.773]
-  y_range: [-0.28, 0.29]
+  # Items stand on the board (their footprints inside these ranges): the
+  # workspace, which the observation configuration must see whole.
+  x_range: [-0.065, 0.92]    # the board, 1 cm in
+  y_range: [-0.325, 0.36]
   edge_margin: 0.025         # minimum distance between an item and the table edge
   robot_keepout_radius: 0.17 # around the robot base axis
   basket_margin: 0.03        # gap between items and the basket wall

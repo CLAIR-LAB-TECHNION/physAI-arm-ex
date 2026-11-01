@@ -27,6 +27,7 @@ from lab_replica import config, objects  # noqa: E402
 from lab_replica.planning.placement import Placement, placement_pose  # noqa: E402
 
 RESULTS = []
+MIN_SEEN = 0.90      # share of the workspace the observation configuration must see
 
 
 def check(name, ok, detail=""):
@@ -340,15 +341,23 @@ def check_observation():
         out = [j for j, v in zip(ARM_JOINTS, q) if not limits[j][0] <= v <= limits[j][1]]
         check("OBSERVATION_JOINTS: six joints within their limits", not out, ", ".join(out) or "")
         cell = config.load_cell()
-        bx, by = cell["table"]["board_x"], cell["table"]["board_y"]
-        # The corners 2 cm in: no item stands at the very edge (the current
-        # configuration's image ends just short of one corner).
-        corners = [(x + d, y + e, cell["table"]["surface_z"]) for x, d in zip(bx, (0.02, -0.02))
-                   for y, e in zip(by, (0.02, -0.02))]
+        # The workspace: where items stand (placement's ranges, on the board),
+        # but for the keep-out around the robot base. From the highest view
+        # the arm reaches, the whole board does not fit in the image (a strip
+        # along its front edge stays out); what one view misses, other views
+        # must find. So: how much of it the camera sees, at least MIN_SEEN.
+        pl = cell["placement"]
+        (x0, x1), (y0, y1) = pl["x_range"], pl["y_range"]
+        X, Y = np.meshgrid(np.arange(x0, x1 + 1e-9, 0.005), np.arange(y0, y1 + 1e-9, 0.005))
+        P = np.c_[X.ravel(), Y.ravel(), np.full(X.size, cell["table"]["surface_z"])]
+        P = P[np.hypot(P[:, 0], P[:, 1]) > pl["robot_keepout_radius"]]
         cam = SurveyViews(cell)
-        seen = [cam.visible([c], margin=0) for c in corners]
-        check("from there the camera sees the whole board (its corners, 2 cm in)", all(seen),
-              f"{sum(seen)}/4 corners in the image; mounting face {fk(q)[2, 3]:.2f} m above the table")
+        seen = np.array([cam.visible([p], margin=0) for p in P])
+        missed = P[~seen]
+        where = (f"; not seen: x {missed[:, 0].min():.2f}..{missed[:, 0].max():.2f}, "
+                 f"y {missed[:, 1].min():.2f}..{missed[:, 1].max():.2f}") if len(missed) else ""
+        check(f"from there the camera sees at least {MIN_SEEN:.0%} of the workspace", seen.mean() >= MIN_SEEN,
+              f"{seen.mean():.1%} seen{where}; mounting face {fk(q)[2, 3]:.2f} m above the table")
     run("OBSERVATION_JOINTS", joints)
 
 

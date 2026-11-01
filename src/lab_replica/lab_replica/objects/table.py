@@ -1,4 +1,4 @@
-"""The lab table (slatted aluminium top with the blue board on it) with the
+"""The lab table (slatted aluminium top with the white board on it) with the
 robot's mounting plate.
 
 cell.yaml sections: `table` (top and board extents, height, board thickness,
@@ -9,7 +9,7 @@ The frame rails and legs are approximate; nothing in the task touches them.
 
 from ..gazebo import sdf
 
-BLUE = (0.07, 0.45, 0.78)
+BOARD = (0.90, 0.90, 0.88)   # white board (since 2026-11-01; before, a blue one)
 ALUMINIUM = (0.70, 0.72, 0.74)
 PLATE = (0.62, 0.63, 0.65)
 
@@ -22,7 +22,7 @@ def table_sdf(cell):
     (bx0, bx1), (by0, by1) = t["board_x"], t["board_y"]
     th = t["board_thickness"]
     H = t["height"]
-    parts = [sdf.box("blue_board", (bx1 - bx0, by1 - by0, th), ((bx0 + bx1) / 2, (by0 + by1) / 2, -th / 2), BLUE,
+    parts = [sdf.box("board", (bx1 - bx0, by1 - by0, th), ((bx0 + bx1) / 2, (by0 + by1) / 2, -th / 2), BOARD,
                      specular=0.05)]
     # Slatted top: extrusions along x, their tops under the board.
     pitch, slat_h = t["slat_pitch"], 0.012
